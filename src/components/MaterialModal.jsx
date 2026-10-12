@@ -8,6 +8,7 @@ import {
   getSection,
   getUi,
   relatedMaterials,
+  resolveAsset,
   typeLabel,
 } from '../lib/content.js';
 import './MaterialModal.css';
@@ -181,8 +182,8 @@ export default function MaterialModal({ materialId, onClose, onNavigate, onOpenM
                 className="modal__video"
                 controls
                 preload="metadata"
-                poster={material.video.poster || undefined}
-                src={material.video.src}
+                poster={resolveAsset(material.video.poster) || undefined}
+                src={resolveAsset(material.video.src)}
               >
                 <track kind="captions" />
               </video>

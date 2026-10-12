@@ -4,6 +4,21 @@ export function getContent() {
   return content;
 }
 
+/**
+ * Подставляет base-путь сборки в корневые пути ассетов.
+ * Локально base = '/', на GitHub Pages — '/<repo>/', иначе `/images/x.svg`
+ * резолвился бы в корень домена и давал 404.
+ * Внешние http(s)/data/blob адреса возвращаются как есть.
+ */
+export function resolveAsset(src) {
+  if (!src || typeof src !== 'string') return src;
+  if (/^(https?:|data:|blob:)/i.test(src)) return src;
+  const base = import.meta.env.BASE_URL || '/';
+  if (!src.startsWith('/')) return src;
+  const trimmed = base.endsWith('/') ? base.slice(0, -1) : base;
+  return `${trimmed}${src}`;
+}
+
 export function getUi() {
   return content.ui || {};
 }

@@ -9,6 +9,7 @@ import {
   getUi,
   randomMaterial,
   relatedMaterials,
+  resolveAsset,
   sectionTitle,
   typeLabel,
 } from '../content.js';
@@ -191,6 +192,34 @@ describe('доступ к контенту', () => {
 
   it('getUi возвращает объект', () => {
     expect(typeof getUi()).toBe('object');
+  });
+});
+
+describe('resolveAsset', () => {
+  it('возвращает пустые и нетекстовые значения как есть', () => {
+    expect(resolveAsset('')).toBe('');
+    expect(resolveAsset(null)).toBe(null);
+    expect(resolveAsset(undefined)).toBe(undefined);
+  });
+
+  it('не трогает внешние http/https/data/blob адреса', () => {
+    expect(resolveAsset('https://example.com/a.png')).toBe('https://example.com/a.png');
+    expect(resolveAsset('http://x.test/b.jpg')).toBe('http://x.test/b.jpg');
+    expect(resolveAsset('data:image/svg+xml;utf8,<svg/>')).toBe('data:image/svg+xml;utf8,<svg/>');
+    expect(resolveAsset('blob:https://x/123')).toBe('blob:https://x/123');
+  });
+
+  it('оставляет относительные пути без изменений', () => {
+    expect(resolveAsset('images/a.svg')).toBe('images/a.svg');
+  });
+
+  it('подставляет base перед корневыми путями', () => {
+    // В Vitest BASE_URL = '/', поэтому путь не меняется — важно, что он не ломается.
+    expect(resolveAsset('/images/a.svg')).toBe('/images/a.svg');
+  });
+
+  it('не раздваивает слэш', () => {
+    expect(resolveAsset('/images/a.svg')).not.toContain('//images');
   });
 });
 
