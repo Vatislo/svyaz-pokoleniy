@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-label="Портрет мастера">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#77764f"/>
+      <stop offset="0.55" stop-color="#454430"/>
+      <stop offset="1" stop-color="#33321f"/>
+    </linearGradient>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="37" result="n"/>
+      <feColorMatrix in="n" type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.14"/></feComponentTransfer>
+      <feComposite operator="over" in2="SourceGraphic"/>
+    </filter>
+    <radialGradient id="vig" cx="0.5" cy="0.45" r="0.85">
+      <stop offset="0.6" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0.45"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#g)"/>
+  <circle cx="620" cy="798" r="233" fill="#77764f" opacity="0.22"/><circle cx="238" cy="471" r="283" fill="#b3b189" opacity="0.25"/><circle cx="767" cy="397" r="425" fill="#77764f" opacity="0.23"/><circle cx="267" cy="596" r="535" fill="#b3b189" opacity="0.24"/>
+  <rect x="0" y="769" width="1200" height="4" fill="#454430" opacity="0.07"/><rect x="0" y="601" width="1200" height="3" fill="#454430" opacity="0.06"/><rect x="0" y="125" width="1200" height="3" fill="#454430" opacity="0.11"/><rect x="0" y="603" width="1200" height="4" fill="#454430" opacity="0.08"/><rect x="0" y="379" width="1200" height="5" fill="#454430" opacity="0.10"/><rect x="0" y="287" width="1200" height="4" fill="#454430" opacity="0.08"/><rect x="0" y="104" width="1200" height="5" fill="#454430" opacity="0.13"/><rect x="0" y="102" width="1200" height="4" fill="#454430" opacity="0.07"/><rect x="0" y="557" width="1200" height="5" fill="#454430" opacity="0.08"/>
+  <rect width="1200" height="800" fill="url(#vig)"/>
+  <rect x="36" y="36" width="1128" height="728" fill="none" stroke="#b3b189" stroke-opacity="0.55" stroke-width="2"/>
+  <text x="72" y="112" fill="#b3b189" font-family="Georgia, serif" font-size="15" letter-spacing="4">ДЕМО · ЗАГЛУШКА</text>
+  <text x="72" y="744" fill="#f7f1e4" font-family="Georgia, serif" font-size="13" font-style="italic" opacity="0.42">Портрет мастера</text>
+  <rect width="1200" height="800" filter="url(#grain)" fill="none"/>
+</svg>

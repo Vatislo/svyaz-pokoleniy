@@ -1,0 +1,46 @@
+.media {
+  position: relative;
+  overflow: hidden;
+  background: var(--paper-deep);
+}
+
+.media__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media--fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.2rem;
+  text-align: center;
+  border: 1px dashed var(--paper-line);
+  background:
+    repeating-linear-gradient(45deg, rgba(28, 22, 17, 0.04) 0 10px, transparent 10px 20px),
+    var(--paper-deep);
+  color: var(--ink-muted);
+  min-height: 140px;
+}
+
+.media--fallback-dark {
+  border-color: rgba(245, 240, 230, 0.35);
+  background:
+    repeating-linear-gradient(45deg, rgba(245, 240, 230, 0.06) 0 10px, transparent 10px 20px),
+    var(--dark-soft);
+  color: rgba(245, 240, 230, 0.75);
+}
+
+.media__fallback-mark {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.media__fallback-text {
+  font-size: 0.85rem;
+  max-width: 32ch;
+}
