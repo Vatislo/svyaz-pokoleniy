@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 750" width="1200" height="750" role="img">
+<defs><filter id="grainm02"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.14"/></feComponentTransfer><feBlend in2="SourceGraphic" mode="multiply"/></filter>
+<linearGradient id="skym02" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9ab92"/><stop offset="1" stop-color="#d8d2c6"/></linearGradient>
+</defs>
+<rect width="1200" height="750" fill="url(#skym02)"/>
+
+<rect x="160" y="160" width="880" height="430" rx="8" fill="#8a7a5e" opacity="0.35"/>
+<rect x="240" y="200" width="720" height="260" fill="#4f6570"/>
+<rect x="260" y="220" width="680" height="220" fill="#b9ab92" opacity="0.4"/>
+<circle cx="420" cy="420" r="40" fill="#d8d2c6"/><path d="M360 560 Q 420 460 480 560 Z" fill="#d8d2c6"/>
+<circle cx="620" cy="410" r="38" fill="#d8d2c6" opacity="0.9"/><path d="M565 560 Q 620 465 675 560 Z" fill="#d8d2c6" opacity="0.9"/>
+<circle cx="800" cy="420" r="36" fill="#d8d2c6" opacity="0.8"/><path d="M750 560 Q 800 470 850 560 Z" fill="#d8d2c6" opacity="0.8"/>
+<rect x="240" y="560" width="720" height="24" fill="#2c261e" opacity="0.4"/>
+<rect y="640" width="1200" height="110" fill="#b9ab92" opacity="0.5"/>
+
+<rect width="1200" height="750" filter="url(#grainm02)" opacity="0.5"/>
+</svg>

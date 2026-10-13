@@ -1,76 +1,39 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import Header from './components/Header.jsx';
-import Footer from './components/Footer.jsx';
-import Home from './pages/Home.jsx';
-import Catalog from './pages/Catalog.jsx';
-import About from './pages/About.jsx';
-import MaterialModal from './components/MaterialModal.jsx';
-import { getContent, getMaterials, getUi } from './lib/content.js';
-import { useHashRoute } from './lib/hooks.js';
+import { Header } from '@/components/Header'
+import { Footer } from '@/components/Footer'
+import { MaterialDialogProvider } from '@/components/MaterialDialog'
+import { Home } from '@/pages/Home'
+import { Catalog } from '@/pages/Catalog'
+import { About } from '@/pages/About'
+import { useHashRoute } from '@/lib/router'
+import content from '@/data/content.json'
 
-import './App.css';
+function Page({ path }) {
+  if (path === '/catalog') {
+    const [base, search = ''] = window.location.hash.replace(/^#/, '').split('?')
+    if (base === '/catalog') {
+      return <Catalog search={new URLSearchParams(search)} />
+    }
+  }
+  if (path === '/about') return <About />
+  return <Home />
+}
 
 export default function App() {
-  const content = getContent();
-  const { path, query } = useHashRoute();
-  const [modalId, setModalId] = useState(null);
-
-  const materials = useMemo(() => getMaterials(), []);
-
-  const openMaterial = useCallback((id) => setModalId(id), []);
-  const closeModal = useCallback(() => setModalId(null), []);
-
-  const navigateModal = useCallback(
-    (dir) => {
-      if (!modalId || materials.length === 0) return;
-      const idx = materials.findIndex((m) => m && m.id === modalId);
-      if (idx < 0) return;
-      const next = (idx + dir + materials.length) % materials.length;
-      setModalId(materials[next].id);
-    },
-    [modalId, materials],
-  );
-
-  const ui = getUi();
-  const mainRef = useRef(null);
-  const initialSection = path.startsWith('/catalog') ? query.get('section') || '' : '';
-
-  const onSkip = useCallback((e) => {
-    e.preventDefault();
-    const node = mainRef.current;
-    if (node) {
-      node.focus();
-      node.scrollIntoView({ block: 'start' });
-    }
-  }, []);
-
-  let page;
-  if (path.startsWith('/catalog')) {
-    page = <Catalog onOpenMaterial={openMaterial} initialSection={initialSection} />;
-  } else if (path.startsWith('/about')) {
-    page = <About />;
-  } else {
-    page = <Home project={content.project} onOpenMaterial={openMaterial} />;
-  }
+  const path = useHashRoute()
 
   return (
-    <div className="app">
-      <a className="skip-link" href="#main" onClick={onSkip}>
-        {ui?.nav?.skipToContent || 'Перейти к содержимому'}
+    <MaterialDialogProvider>
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-full focus:bg-graphite focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-stone"
+      >
+        {content.ui.skipToContent}
       </a>
-      <Header project={content.project} ui={ui} route={path} />
-      <main id="main" className="app__main" tabIndex={-1} ref={mainRef}>
-        {page}
+      <Header path={path} />
+      <main id="content">
+        <Page path={path} />
       </main>
-      <Footer footer={content.footer} />
-      {modalId && (
-        <MaterialModal
-          materialId={modalId}
-          onClose={closeModal}
-          onNavigate={navigateModal}
-          onOpenMaterial={openMaterial}
-        />
-      )}
-    </div>
-  );
+      <Footer />
+    </MaterialDialogProvider>
+  )
 }

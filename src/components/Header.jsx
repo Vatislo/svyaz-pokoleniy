@@ -1,142 +1,142 @@
-import { useEffect, useId, useState } from 'react';
+import { useState } from 'react'
+import { Menu, Moon, Sun } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
+import { Separator } from '@/components/ui/separator'
+import { cn } from 'cn'
+import { useTheme } from '@/lib/theme'
+import content from '@/data/content.json'
 
-import { useTheme } from '../lib/useTheme.js';
-import './Header.css';
+function ThemeToggle({ className }) {
+  const { theme, toggle } = useTheme()
+  const label = theme === 'dark' ? content.ui.themeLight : content.ui.themeDark
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-pressed={theme === 'dark'}
+      aria-label={`${content.ui.themeToggle}: ${label}`}
+      title={`${content.ui.themeToggle}: ${label}`}
+      className={cn(
+        'inline-flex size-[38px] shrink-0 items-center justify-center rounded-full border border-stone-line bg-stone/70 text-graphite-soft transition-colors hover:border-graphite-muted hover:bg-stone-deep hover:text-graphite',
+        className,
+      )}
+    >
+      {theme === 'dark' ? (
+        <Sun className="size-4" aria-hidden="true" />
+      ) : (
+        <Moon className="size-4" aria-hidden="true" />
+      )}
+    </button>
+  )
+}
 
-const LINKS = [
-  { href: '#/', key: 'home' },
-  { href: '#/catalog', key: 'catalog' },
-  { href: '#/about', key: 'about' },
-];
+function navLinkClass(active) {
+  return cn(
+    'inline-flex h-9 items-center rounded-full px-4 text-sm font-semibold transition-colors',
+    active
+      ? 'bg-graphite text-stone'
+      : 'border border-transparent text-graphite-soft hover:border-stone-line hover:bg-stone-deep hover:text-graphite',
+  )
+}
 
-export default function Header({ project, ui, route }) {
-  const [open, setOpen] = useState(false);
-  const menuId = useId();
-  const { theme, toggle } = useTheme();
-  const themeLabels = ui?.nav?.theme || {};
-  const isDark = theme === 'dark';
-
-  // Закрываем меню при смене маршрута. Синхронизация во время рендера
-  // (паттерн React «adjusting state when props change») — без эффекта.
-  const [prevRoute, setPrevRoute] = useState(route);
-  if (route !== prevRoute) {
-    setPrevRoute(route);
-    setOpen(false);
-  }
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open]);
-
-  const isActive = (key) => {
-    if (key === 'home') return route === '/';
-    if (key === 'catalog') return route.startsWith('/catalog');
-    if (key === 'about') return route.startsWith('/about');
-    return false;
-  };
+export function Header({ path }) {
+  const [open, setOpen] = useState(false)
 
   return (
-    <header className="header">
-      <div className="header__inner container">
-        <a className="header__brand" href="#/" aria-label={`${project.title} — на главную`}>
-          <span className="header__mark" aria-hidden="true">
-            ✦
+    <header className="sticky top-0 z-50 border-b border-stone-line bg-stone/85 backdrop-blur-md">
+      <div className="shell flex h-16 items-center gap-4">
+        <a
+          href="#/"
+          className="flex min-w-0 items-center gap-2 text-graphite"
+          aria-label={content.project.title}
+        >
+          <span className="text-lg text-accent" aria-hidden="true">
+            {content.project.mark}
           </span>
-          <span className="header__title">{project.title}</span>
+          <span className="display-title truncate text-lg">
+            {content.project.title}
+          </span>
         </a>
 
-        <nav className="header__nav" aria-label="Основная навигация">
-          <ul className="header__list">
-            {LINKS.map((link) => (
-              <li key={link.key}>
-                <a
-                  className={`header__link ${isActive(link.key) ? 'header__link--active' : ''}`}
-                  href={link.href}
-                  aria-current={isActive(link.key) ? 'page' : undefined}
-                >
-                  {ui.nav[link.key]}
-                </a>
-              </li>
-            ))}
-          </ul>
+        <nav
+          aria-label={content.ui.menu}
+          className="ml-auto hidden items-center gap-1.5 md:flex"
+        >
+          {content.nav.map((item) => {
+            const active = path === item.href.replace(/^#/, '')
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                className={navLinkClass(active)}
+              >
+                {item.label}
+              </a>
+            )
+          })}
+          <ThemeToggle className="ml-2" />
         </nav>
 
-        <button
-          type="button"
-          className="header__theme"
-          onClick={toggle}
-          aria-pressed={isDark}
-          aria-label={
-            isDark
-              ? themeLabels.toLight || 'Включить светлую тему'
-              : themeLabels.toDark || 'Включить тёмную тему'
-          }
-          title={
-            isDark
-              ? themeLabels.toLight || 'Включить светлую тему'
-              : themeLabels.toDark || 'Включить тёмную тему'
-          }
-        >
-          <span className="header__theme-icon" aria-hidden="true">
-            {isDark ? '☾' : '☀'}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          className="header__burger"
-          aria-expanded={open}
-          aria-controls={menuId}
-          onClick={() => setOpen((v) => !v)}
-        >
-          <span className="header__burger-icon" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </span>
-          {open ? ui.nav.menuClose : ui.nav.menuOpen}
-        </button>
-      </div>
-
-      <div
-        id={menuId}
-        className={`header__drawer ${open ? 'header__drawer--open' : ''}`}
-        hidden={!open}
-      >
-        <nav aria-label="Мобильная навигация">
-          <ul className="header__drawer-list">
-            {LINKS.map((link) => (
-              <li key={link.key}>
-                <a
-                  className={`header__drawer-link ${isActive(link.key) ? 'header__drawer-link--active' : ''}`}
-                  href={link.href}
-                  aria-current={isActive(link.key) ? 'page' : undefined}
-                  onClick={() => setOpen(false)}
-                >
-                  {ui.nav[link.key]}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <button
-          type="button"
-          className="header__drawer-theme"
-          onClick={toggle}
-          aria-pressed={isDark}
-        >
-          <span aria-hidden="true">{isDark ? '☾' : '☀'}</span>
-          {isDark
-            ? themeLabels.toLight || 'Включить светлую тему'
-            : themeLabels.toDark || 'Включить тёмную тему'}
-        </button>
+        <div className="ml-auto flex items-center gap-2 md:hidden">
+          <ThemeToggle />
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="pill gap-1.5 rounded-full border-stone-line bg-stone/70 px-3 text-graphite"
+                aria-label={content.ui.openMenu}
+              >
+                <Menu className="size-4" aria-hidden="true" />
+                {content.ui.menu}
+              </Button>
+            </SheetTrigger>
+            <SheetContent
+              side="right"
+              className="w-72 border-l border-stone-line bg-stone"
+            >
+              <SheetHeader>
+                <SheetTitle className="display-title text-lg">
+                  {content.ui.menu}
+                </SheetTitle>
+              </SheetHeader>
+              <Separator className="bg-stone-line" />
+              <nav
+                aria-label={content.ui.menu}
+                className="flex flex-col gap-1 px-4"
+              >
+                {content.nav.map((item) => {
+                  const active = path === item.href.replace(/^#/, '')
+                  return (
+                    <a
+                      key={item.href}
+                      href={item.href}
+                      aria-current={active ? 'page' : undefined}
+                      onClick={() => setOpen(false)}
+                      className={cn(
+                        'flex items-center rounded-r-full border-l-4 py-2.5 pl-4 text-base font-semibold transition-colors',
+                        active
+                          ? 'border-accent bg-stone-deep text-graphite'
+                          : 'border-transparent text-graphite-soft hover:bg-stone-deep hover:text-graphite',
+                      )}
+                    >
+                      {item.label}
+                    </a>
+                  )
+                })}
+              </nav>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
     </header>
-  );
+  )
 }

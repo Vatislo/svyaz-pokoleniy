@@ -1,82 +1,63 @@
-import './Footer.css';
+import content from '@/data/content.json'
 
-function PersonList({ items, roleFallback, nameFallback }) {
-  if (!Array.isArray(items) || items.length === 0) return null;
+export function Footer() {
   return (
-    <ul className="footer__people">
-      {items.map((item, i) => {
-        const role = item?.role || roleFallback;
-        const name = item?.name || nameFallback;
-        return (
-          <li key={item?.id || `${role}-${i}`}>
-            <span className="footer__person-role">{role}</span>
-            <span className="footer__person-name">{name}</span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-export default function Footer({ footer }) {
-  const school = footer?.school || {};
-  const replaceHint = 'заменить';
-  const specifyHint = 'указать';
-
-  return (
-    <footer className="footer">
-      <div className="container footer__inner">
-        <p className="footer__notice" role="note">
-          {footer?.note ||
-            'Демонстрационные данные. Замените сведения о школе, авторах и руководителях перед публикацией сайта.'}
+    <footer className="border-t border-stone-line bg-stone-deep py-10">
+      <div className="shell flex flex-col gap-8">
+        <p className="border-l-4 border-accent bg-stone px-4 py-3 text-sm text-graphite-soft">
+          {content.footer.warning}
         </p>
 
-        <div className="footer__grid">
-          <section className="footer__block" aria-labelledby="footer-school">
-            <h2 className="footer__heading" id="footer-school">
-              Школа-организатор
+        <div className="grid gap-8 [grid-template-columns:repeat(auto-fit,minmax(230px,1fr))]">
+          <div>
+            <h2 className="kicker mb-3 text-graphite-muted">
+              {content.footer.schoolTitle}
             </h2>
-            <dl className="footer__dl">
-              <div>
-                <dt>Название</dt>
-                <dd>{school.name || `Название школы — ${replaceHint}`}</dd>
-              </div>
-              <div>
-                <dt>Адрес</dt>
-                <dd>{school.address || `Город, улица — ${replaceHint}`}</dd>
-              </div>
-              <div>
-                <dt>Сайт школы</dt>
-                <dd>{school.site || `Адрес сайта школы — ${replaceHint}`}</dd>
-              </div>
+            <dl className="flex flex-col gap-2.5">
+              {content.footer.school.map((row) => (
+                <div key={row.label}>
+                  <dt className="kicker text-graphite-muted">{row.label}</dt>
+                  <dd className="text-sm text-graphite-soft">{row.value}</dd>
+                </div>
+              ))}
             </dl>
-          </section>
+          </div>
 
-          <section className="footer__block" aria-labelledby="footer-authors">
-            <h2 className="footer__heading" id="footer-authors">
-              Авторы проекта
+          <div>
+            <h2 className="kicker mb-3 text-graphite-muted">
+              {content.footer.authors.title}
             </h2>
-            <PersonList
-              items={footer?.authors}
-              roleFallback={`Автор проекта — ${specifyHint}`}
-              nameFallback={`Фамилия Имя — ${specifyHint}`}
-            />
-          </section>
+            <ul className="flex flex-col gap-2.5">
+              {content.footer.authors.items.map((row) => (
+                <li key={row.role}>
+                  <span className="kicker block text-graphite-muted">
+                    {row.role}
+                  </span>
+                  <span className="text-sm text-graphite-soft">{row.name}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
 
-          <section className="footer__block" aria-labelledby="footer-supervisors">
-            <h2 className="footer__heading" id="footer-supervisors">
-              Руководители
+          <div>
+            <h2 className="kicker mb-3 text-graphite-muted">
+              {content.footer.leaders.title}
             </h2>
-            <PersonList
-              items={footer?.supervisors}
-              roleFallback={`Научный руководитель — ${specifyHint}`}
-              nameFallback={`Фамилия Имя — ${specifyHint}`}
-            />
-          </section>
+            <ul className="flex flex-col gap-2.5">
+              {content.footer.leaders.items.map((row) => (
+                <li key={row.role}>
+                  <span className="kicker block text-graphite-muted">
+                    {row.role}
+                  </span>
+                  <span className="text-sm text-graphite-soft">{row.name}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
-        <p className="footer__legal">{footer?.legal}</p>
+        <p className="text-xs text-graphite-muted">{content.footer.legal}</p>
       </div>
     </footer>
-  );
+  )
 }

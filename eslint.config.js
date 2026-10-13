@@ -1,25 +1,18 @@
-import js from '@eslint/js';
-import globals from 'globals';
-import reactHooks from 'eslint-plugin-react-hooks';
-import reactRefresh from 'eslint-plugin-react-refresh';
-import prettier from 'eslint-config-prettier';
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
+  { ignores: ['dist'] },
   {
-    ignores: ['dist/**', 'node_modules/**', 'public/**', 'coverage/**'],
-  },
-  js.configs.recommended,
-  {
-    files: ['**/*.{js,jsx,mjs}'],
+    files: ['**/*.{js,jsx}'],
     languageOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
+      ecmaVersion: 2022,
+      globals: globals.browser,
       parserOptions: {
+        ecmaVersion: 'latest',
         ecmaFeatures: { jsx: true },
+        sourceType: 'module',
       },
     },
     plugins: {
@@ -28,20 +21,11 @@ export default [
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      'react-refresh/only-export-components': 'off',
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
-      eqeqeq: ['error', 'smart'],
-      'prefer-const': 'error',
-      'no-var': 'error',
     },
   },
-  prettier,
-  {
-    // CLI-скрипты (генераторы, валидатор, smoke-тест) печатают вывод в stdout.
-    files: ['scripts/**/*.{js,mjs}'],
-    rules: {
-      'no-console': 'off',
-    },
-  },
-];
+]

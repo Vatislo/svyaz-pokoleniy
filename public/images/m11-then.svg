@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 750" width="1200" height="750" role="img">
+<defs><filter id="grainm11then"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.14"/></feComponentTransfer><feBlend in2="SourceGraphic" mode="multiply"/></filter>
+<linearGradient id="skym11then" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9b896"/><stop offset="1" stop-color="#e8e0d0"/></linearGradient>
+</defs>
+<rect width="1200" height="750" fill="url(#skym11then)"/>
+
+<rect x="300" y="320" width="520" height="240" rx="8" fill="#8a7350"/>
+<polygon points="270,330 560,220 850,330" fill="#5c4a33"/>
+<rect x="340" y="400" width="180" height="120" fill="#c9b896" opacity="0.8"/>
+<rect x="600" y="380" width="120" height="180" fill="#e8e0d0" opacity="0.7"/>
+<rect x="80" y="420" width="60" height="140" rx="6" fill="#5c4a33" opacity="0.7"/>
+<rect y="560" width="1200" height="190" fill="#c9b896" opacity="0.65"/>
+<line x1="0" y1="600" x2="1200" y2="600" stroke="#e8e0d0" stroke-width="6" opacity="0.5"/>
+
+<rect width="1200" height="750" filter="url(#grainm11then)" opacity="0.5"/>
+</svg>

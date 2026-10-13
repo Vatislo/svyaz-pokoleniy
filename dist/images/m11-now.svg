@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 750" width="1200" height="750" role="img">
+<defs><filter id="grainm11now"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.14"/></feComponentTransfer><feBlend in2="SourceGraphic" mode="multiply"/></filter>
+<linearGradient id="skym11now" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b7c4ca"/><stop offset="1" stop-color="#dde3e6"/></linearGradient>
+</defs>
+<rect width="1200" height="750" fill="url(#skym11now)"/>
+
+<rect x="300" y="300" width="520" height="260" rx="12" fill="#dde3e6" opacity="0.9" stroke="#4f6570" stroke-width="8"/>
+<rect x="330" y="330" width="200" height="170" fill="#7d9099" opacity="0.5"/>
+<rect x="600" y="330" width="180" height="200" fill="#b7c4ca"/>
+<rect x="80" y="420" width="60" height="140" rx="6" fill="#4f6570" opacity="0.7"/>
+<rect y="560" width="1200" height="190" fill="#7d9099" opacity="0.55"/>
+<line x1="0" y1="600" x2="1200" y2="600" stroke="#dde3e6" stroke-width="6" opacity="0.6"/>
+
+<rect width="1200" height="750" filter="url(#grainm11now)" opacity="0.5"/>
+</svg>
