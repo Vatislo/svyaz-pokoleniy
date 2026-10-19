@@ -7,6 +7,13 @@ export function CompareSlider({ thenImage, thenAlt, nowImage, nowAlt, compact = 
   const [pos, setPos] = useState(50)
   const wrapRef = useRef(null)
 
+  const updateFromPointer = (event) => {
+    const bounds = wrapRef.current?.getBoundingClientRect()
+    if (!bounds || bounds.width <= 0) return
+    const next = ((event.clientX - bounds.left) / bounds.width) * 100
+    setPos(Math.max(0, Math.min(100, next)))
+  }
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.target !== wrapRef.current) return
@@ -30,8 +37,15 @@ export function CompareSlider({ thenImage, thenAlt, nowImage, nowAlt, compact = 
         tabIndex={0}
         role="group"
         aria-label={`${content.ui.then} / ${content.ui.now}`}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture?.(event.pointerId)
+          updateFromPointer(event)
+        }}
+        onPointerMove={(event) => {
+          if (event.buttons === 1 || event.pointerType === 'touch') updateFromPointer(event)
+        }}
         className={cn(
-          'relative w-full overflow-hidden rounded-[14px] bg-dark shadow-card',
+          'relative w-full touch-pan-y overflow-hidden rounded-[14px] bg-dark shadow-card select-none',
           compact ? 'aspect-video' : 'aspect-[16/10]',
         )}
       >
@@ -63,10 +77,12 @@ export function CompareSlider({ thenImage, thenAlt, nowImage, nowAlt, compact = 
           </span>
         </div>
 
-        <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/80 px-3 py-1 text-[0.66rem] font-semibold tracking-[0.14em] text-stone uppercase">
+        {/* Подписи с фиксированными цветами: в тёмной теме `text-stone`
+            становится тёмным, и пиюли сливались с тёмными участками фото. */}
+        <span className="pointer-events-none absolute bottom-3 left-3 rounded-full border border-black/20 bg-white/90 px-3 py-1 text-[0.66rem] font-semibold tracking-[0.14em] text-[#1e1d1c] uppercase shadow-sm">
           {content.ui.then}
         </span>
-        <span className="pointer-events-none absolute right-3 bottom-3 rounded-full bg-black/80 px-3 py-1 text-[0.66rem] font-semibold tracking-[0.14em] text-stone uppercase">
+        <span className="pointer-events-none absolute right-3 bottom-3 rounded-full border border-black/20 bg-white/90 px-3 py-1 text-[0.66rem] font-semibold tracking-[0.14em] text-[#1e1d1c] uppercase shadow-sm">
           {content.ui.now}
         </span>
 
@@ -78,7 +94,7 @@ export function CompareSlider({ thenImage, thenAlt, nowImage, nowAlt, compact = 
           value={pos}
           onChange={(e) => setPos(Number(e.target.value))}
           aria-label={`${content.ui.then} / ${content.ui.now}`}
-          className="absolute inset-0 size-full cursor-ew-resize opacity-0"
+          className="absolute inset-0 z-20 size-full cursor-ew-resize opacity-0"
         />
       </div>
 

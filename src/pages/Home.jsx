@@ -1,12 +1,14 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SafeImage } from '@/components/SafeImage'
 import { CompareSlider } from '@/components/CompareSlider'
-import { useMaterialDialog } from '@/components/MaterialDialog'
 import { useSnapScenes } from '@/lib/useSnapScenes'
+import { api } from '@/lib/api'
 import { cn } from 'cn'
 import content from '@/data/content.json'
+
+const PREVIEW_SECTIONS = 3
 
 function SceneShell({ index, active, enabled, label, className, children }) {
   const ref = useRef(null)
@@ -23,12 +25,18 @@ function SceneShell({ index, active, enabled, label, className, children }) {
       aria-hidden={hidden || undefined}
       tabIndex={hidden ? -1 : undefined}
       className={cn(
-        'flex flex-col justify-center',
-        enabled
-          ? 'absolute inset-0 overflow-y-auto overscroll-contain px-4 py-10 transition-[opacity,transform] duration-[420ms] ease-out md:px-8'
-          : 'border-b border-stone-line px-4 py-14 md:px-8',
-        enabled && hidden && 'pointer-events-none translate-y-[18px] opacity-0',
+        'flex flex-col',
+        // className идёт ДО базовых классов: иначе tailwind-merge вырезает
+        // `absolute` из-за `relative` в описании конкретной сцены и сцены
+        // перестают накладываться друг на друга, «снап»-скролл ломается.
         className,
+        enabled
+          ? // В режиме сцен центрируем через авто-поля: `justify-center` в
+            // прокручиваемом контейнере обрезает верх контента, и до него
+            // нельзя было докрутить.
+            'absolute inset-0 overflow-y-auto overscroll-contain px-4 py-10 transition-[opacity,transform] duration-[420ms] ease-out md:px-8 [&>*:not(.absolute)]:my-auto'
+          : 'justify-center border-b border-stone-line px-4 py-14 md:px-8',
+        enabled && hidden && 'pointer-events-none translate-y-[18px] opacity-0',
       )}
     >
       {children}
@@ -36,15 +44,15 @@ function SceneShell({ index, active, enabled, label, className, children }) {
   )
 }
 
-function CoverScene({ scene, active, enabled, onGo }) {
+function CoverScene({ scene, index, active, enabled, onGo }) {
   const note = scene.note
   return (
     <SceneShell
-      index={0}
+      index={index}
       active={active}
       enabled={enabled}
       label={scene.navLabel}
-      className="relative isolate !justify-center overflow-hidden bg-scene"
+      className="relative isolate overflow-hidden bg-scene"
     >
       <div className="absolute inset-0 -z-10">
         <SafeImage
@@ -72,7 +80,7 @@ function CoverScene({ scene, active, enabled, onGo }) {
           {scene.subtitle}
         </p>
         <Button
-          onClick={() => onGo(scene.cta.target)}
+          onClick={() => onGo(scene.cta.target, true)}
           className="pill mt-2 h-11 gap-2 bg-stone px-6 text-base font-semibold text-graphite hover:bg-white"
         >
           {scene.cta.label}
@@ -88,10 +96,13 @@ function CoverScene({ scene, active, enabled, onGo }) {
   )
 }
 
-function SectionsScene({ scene, active, enabled, onOpen }) {
+function SectionsScene({ scene, index, active, enabled }) {
+  // На главной показываем лишь несколько примеров разделов,
+  // полный список доступен в каталоге.
+  const previewSections = content.sections.slice(0, PREVIEW_SECTIONS)
   return (
     <SceneShell
-      index={1}
+      index={index}
       active={active}
       enabled={enabled}
       label={scene.navLabel}
@@ -113,7 +124,7 @@ function SectionsScene({ scene, active, enabled, onOpen }) {
         </div>
 
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {content.sections.map((section) => (
+          {previewSections.map((section) => (
             <article
               key={section.id}
               className="group flex flex-col overflow-hidden rounded-[14px] border border-stone-line bg-stone transition-all duration-200 hover:-translate-y-[3px] hover:shadow-card"
@@ -135,7 +146,6 @@ function SectionsScene({ scene, active, enabled, onOpen }) {
                 </p>
                 <a
                   href={`#/catalog?section=${section.id}`}
-                  onClick={() => onOpen?.(section.id)}
                   className="mt-1 w-fit text-sm font-semibold text-accent underline-offset-4 hover:text-accent-strong hover:underline"
                 >
                   {content.ui.viewSection}
@@ -144,17 +154,28 @@ function SectionsScene({ scene, active, enabled, onOpen }) {
             </article>
           ))}
         </div>
+
+        {scene.allSectionsLink && (
+          <a
+            href={scene.allSectionsLink.href}
+            className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-accent underline-offset-4 hover:underline"
+          >
+            {scene.allSectionsLink.label}
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </a>
+        )}
       </div>
     </SceneShell>
   )
 }
 
-function CompareScene({ scene, active, enabled }) {
-  const material = content.materials.find((m) => m.id === scene.materialId)
-  if (!material) return null
+// Сцена «Тогда и сейчас»: показывает первый проект участников
+// с фотографиями тогда и сейчас.
+function CompareScene({ scene, index, active, enabled, project }) {
+  if (!project) return null
   return (
     <SceneShell
-      index={2}
+      index={index}
       active={active}
       enabled={enabled}
       label={scene.navLabel}
@@ -168,14 +189,13 @@ function CompareScene({ scene, active, enabled }) {
           <p className="text-base leading-relaxed text-graphite-soft">
             {scene.text}
           </p>
-          <p className="text-base font-semibold text-accent">{material.title}</p>
         </div>
         <div className="lg:col-span-7">
           <CompareSlider
-            thenImage={material.thenImage}
-            thenAlt={material.thenAlt}
-            nowImage={material.nowImage}
-            nowAlt={material.nowAlt}
+            thenImage={project.before_image_url || project.after_image_url}
+            thenAlt={`Фотография «тогда»: ${project.title}`}
+            nowImage={project.after_image_url || project.before_image_url}
+            nowAlt={`Фотография «сейчас»: ${project.title}`}
             compact
           />
         </div>
@@ -184,13 +204,12 @@ function CompareScene({ scene, active, enabled }) {
   )
 }
 
-function StoryScene({ scene, active, enabled }) {
-  const material = content.materials.find((m) => m.id === scene.materialId)
-  const { open } = useMaterialDialog()
-  if (!material) return null
+// Сцена «История проекта»: показывает первый опубликованный проект.
+function StoryScene({ scene, index, active, enabled, project }) {
+  if (!project) return null
   return (
     <SceneShell
-      index={3}
+      index={index}
       active={active}
       enabled={enabled}
       label={scene.navLabel}
@@ -203,8 +222,8 @@ function StoryScene({ scene, active, enabled }) {
       <div className="shell grid items-center gap-8 lg:grid-cols-12">
         <div className="lg:col-span-6">
           <SafeImage
-            src={material.image}
-            alt={material.alt}
+            src={project.image_url}
+            alt={project.title}
             className="aspect-[4/3] w-full rounded-[14px] border border-stone-line shadow-card"
             fallbackClassName="aspect-[4/3] w-full rounded-[14px]"
           />
@@ -219,12 +238,17 @@ function StoryScene({ scene, active, enabled }) {
           </p>
           <div>
             <Button
-              onClick={() => open(material.id)}
+              asChild
               className="pill mt-1 h-10 gap-2 bg-graphite px-5 text-sm font-semibold text-stone hover:bg-graphite-soft"
             >
-              {scene.cta.label}
-              <ArrowRight className="size-4" aria-hidden="true" />
+              <a href={`#/project/${project.id}`}>
+                {scene.cta.label}
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </a>
             </Button>
+            <a href="#/catalog" className="mt-3 inline-flex w-fit items-center gap-2 text-sm font-semibold text-accent underline-offset-4 hover:underline">
+              Перейти к материалам <ArrowRight className="size-4" aria-hidden="true" />
+            </a>
           </div>
         </div>
       </div>
@@ -232,10 +256,10 @@ function StoryScene({ scene, active, enabled }) {
   )
 }
 
-function CtaScene({ scene, active, enabled }) {
+function CtaScene({ scene, index, active, enabled }) {
   return (
     <SceneShell
-      index={4}
+      index={index}
       active={active}
       enabled={enabled}
       label={scene.navLabel}
@@ -265,11 +289,12 @@ function CtaScene({ scene, active, enabled }) {
 }
 
 function SceneIndicator({ scenes, active, enabled, go }) {
-  if (enabled) {
-    return (
+  return (
+    <>
+      {/* Точки сбоку: на планшетах и компьютерах */}
       <nav
         aria-label={content.ui.sceneIndicator}
-        className="fixed top-1/2 right-4 z-40 hidden -translate-y-1/2 flex-col gap-1.5 rounded-full bg-stone/70 p-2 backdrop-blur-[6px] md:flex"
+        className="fixed top-1/2 right-4 z-40 hidden -translate-y-1/2 flex-col gap-1.5 rounded-2xl border border-stone-line bg-stone p-2 shadow-card md:flex"
       >
         {scenes.map((scene, i) => {
           const isActive = i === active
@@ -278,7 +303,7 @@ function SceneIndicator({ scenes, active, enabled, go }) {
               key={scene.id}
               type="button"
               aria-current={isActive ? 'step' : undefined}
-              onClick={() => go(i)}
+              onClick={() => go(i, !enabled)}
               className={cn(
                 'pill flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-colors',
                 isActive
@@ -303,40 +328,69 @@ function SceneIndicator({ scenes, active, enabled, go }) {
           )
         })}
       </nav>
-    )
-  }
 
-  return (
-    <nav
-      aria-label={content.ui.sceneIndicator}
-      className="fixed inset-x-0 bottom-0 z-40 flex justify-center gap-1.5 border-t border-stone-line bg-stone/85 px-3 py-2 backdrop-blur-md md:hidden"
-    >
-      {scenes.map((scene, i) => {
-        const isActive = i === active
-        return (
-          <button
-            key={scene.id}
-            type="button"
-            aria-current={isActive ? 'step' : undefined}
-            onClick={() => go(i, true)}
-            className={cn(
-              'pill flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors',
-              isActive
-                ? 'bg-graphite text-stone'
-                : 'text-graphite-soft hover:bg-stone-deep',
-            )}
-          >
-            <span>{String(i + 1).padStart(2, '0')}</span>
-            {isActive && <span className="whitespace-nowrap">{scene.navLabel}</span>}
-          </button>
-        )
-      })}
-    </nav>
+      {/* Панель снизу: на телефоне */}
+      <nav
+        aria-label={content.ui.sceneIndicator}
+        className="fixed inset-x-0 bottom-0 z-40 flex justify-center gap-1.5 border-t border-stone-line bg-stone/95 px-3 py-2 shadow-card md:hidden"
+      >
+        {scenes.map((scene, i) => {
+          const isActive = i === active
+          return (
+            <button
+              key={scene.id}
+              type="button"
+              aria-current={isActive ? 'step' : undefined}
+              onClick={() => go(i, true)}
+              className={cn(
+                'pill flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors',
+                isActive
+                  ? 'bg-graphite text-stone'
+                  : 'text-graphite-soft hover:bg-stone-deep',
+              )}
+            >
+              <span>{String(i + 1).padStart(2, '0')}</span>
+              {isActive && <span className="whitespace-nowrap">{scene.navLabel}</span>}
+            </button>
+          )
+        })}
+      </nav>
+    </>
   )
 }
 
 export function Home() {
-  const scenes = content.home.scenes
+  const [projects, setProjects] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    api('/api/projects')
+      .then((result) => { if (!cancelled) setProjects(Array.isArray(result) ? result : []) })
+      .catch(() => { if (!cancelled) setProjects([]) })
+    return () => { cancelled = true }
+  }, [])
+
+  // Проект с фотографиями тогда и сейчас для сцены сравнения.
+  const compareProject = useMemo(
+    () => projects.find((p) => p.before_image_url && p.after_image_url) || null,
+    [projects],
+  )
+  // Первый проект с обложкой для сцены истории.
+  const storyProject = useMemo(
+    () => projects.find((p) => p.image_url) || projects[0] || null,
+    [projects],
+  )
+
+  // Сцены с материалами показываются только если есть что показать.
+  const scenes = useMemo(
+    () => content.home.scenes.filter((scene) => {
+      if (scene.kind === 'compare') return Boolean(compareProject)
+      if (scene.kind === 'story') return Boolean(storyProject)
+      return true
+    }),
+    [compareProject, storyProject],
+  )
+
   const { active, go, enabled } = useSnapScenes(scenes.length)
   const sceneRefs = useRef([])
 
@@ -364,27 +418,32 @@ export function Home() {
             }}
             className={cn(
               enabled ? 'absolute inset-0' : 'min-h-[70vh]',
+              // Обёртки сцен накладываются друг на друга: без этого правила
+              // невидимая обёртка соседней сцены перехватывает все клики,
+              // и кнопки активной сцены не работают.
+              enabled && i !== active && 'pointer-events-none',
             )}
           >
             {scene.kind === 'cover' && (
               <CoverScene
                 scene={scene}
+                index={i}
                 active={active}
                 enabled={enabled}
                 onGo={goTo}
               />
             )}
             {scene.kind === 'sections' && (
-              <SectionsScene scene={scene} active={active} enabled={enabled} />
+              <SectionsScene scene={scene} index={i} active={active} enabled={enabled} />
             )}
             {scene.kind === 'compare' && (
-              <CompareScene scene={scene} active={active} enabled={enabled} />
+              <CompareScene scene={scene} index={i} active={active} enabled={enabled} project={compareProject} />
             )}
             {scene.kind === 'story' && (
-              <StoryScene scene={scene} active={active} enabled={enabled} />
+              <StoryScene scene={scene} index={i} active={active} enabled={enabled} project={storyProject} />
             )}
             {scene.kind === 'cta' && (
-              <CtaScene scene={scene} active={active} enabled={enabled} />
+              <CtaScene scene={scene} index={i} active={active} enabled={enabled} />
             )}
           </div>
         ))}

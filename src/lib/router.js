@@ -1,29 +1,42 @@
+
 import { useEffect, useState } from 'react'
 
-const ROUTES = ['/', '/catalog', '/about']
+function getCurrentRoute() {
+  const hash = window.location.hash
 
-function parseHash() {
-  const raw = window.location.hash.replace(/^#/, '')
-  const [path] = raw.split('?')
-  return ROUTES.includes(path) ? path : '/'
+  if (!hash || hash === '#') {
+    return '/'
+  }
+
+  const route = hash
+    .slice(1)
+    .split('?')[0]
+
+  // Поддерживаем маршруты вида #/admin
+  if (route.startsWith('/')) {
+    return route
+  }
+
+  return '/'
 }
 
 export function useHashRoute() {
-  const [path, setPath] = useState(parseHash)
+  const [path, setPath] = useState(getCurrentRoute)
 
   useEffect(() => {
-    const onChange = () => setPath(parseHash())
-    window.addEventListener('hashchange', onChange)
-    return () => window.removeEventListener('hashchange', onChange)
+    function handleHashChange() {
+      setPath(getCurrentRoute())
+    }
+
+    window.addEventListener('hashchange', handleHashChange)
+
+    // Синхронизируем маршрут при запуске
+    handleHashChange()
+
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange)
+    }
   }, [])
 
-  useEffect(() => {
-    window.scrollTo(0, 0)
-  }, [path])
-
   return path
-}
-
-export function navigate(href) {
-  window.location.hash = href.replace(/^#/, '')
 }
