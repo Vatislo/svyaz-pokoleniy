@@ -2,6 +2,7 @@
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import pool from './db.js';
+import { initAll } from './init.js';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -10,6 +11,8 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 
 async function main() {
   try {
+    await initAll();
+
     const username = process.env.ADMIN_USERNAME || 'admin';
     const password = process.env.ADMIN_PASSWORD;
 
@@ -24,7 +27,7 @@ async function main() {
     await pool.execute(
       `INSERT INTO admins (username, password_hash)
        VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)`,
+       ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash`,
       [username, hash]
     );
 

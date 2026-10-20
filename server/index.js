@@ -6,60 +6,17 @@ import bcrypt from 'bcrypt';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import pool from './db.js';
+import pool, { uploadsDir } from './db.js';
+import { initAll } from './init.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const PORT = Number(process.env.API_PORT || 3001);
+const PORT = Number(process.env.API_PORT || process.env.PORT || 3001);
+const isProduction = process.env.NODE_ENV === 'production';
 
-async function ensureProjectColumns() {
-  // Создаём базовые таблицы при первом запуске, если база данных уже создана в MySQL.
-  await pool.execute(`CREATE TABLE IF NOT EXISTS projects (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    title VARCHAR(200) NOT NULL,
-    description LONGTEXT NOT NULL,
-    author VARCHAR(150) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    image_url VARCHAR(1000) NOT NULL,
-    status VARCHAR(30) NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    topic VARCHAR(80) NULL,
-    project_type VARCHAR(40) NOT NULL DEFAULT 'photo',
-    media_url VARCHAR(1000) NULL,
-    before_image_url VARCHAR(1000) NULL,
-    after_image_url VARCHAR(1000) NULL,
-    author_role VARCHAR(150) NULL,
-    project_date VARCHAR(80) NULL,
-    source_info VARCHAR(500) NULL,
-    tags_json TEXT NULL,
-    gallery_json TEXT NULL
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
-  await pool.execute(`CREATE TABLE IF NOT EXISTS admins (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(80) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
-
-  const columns = {
-    topic: "VARCHAR(80) NULL",
-    project_type: "VARCHAR(40) NOT NULL DEFAULT 'photo'",
-    media_url: 'VARCHAR(1000) NULL',
-    before_image_url: 'VARCHAR(1000) NULL',
-    after_image_url: 'VARCHAR(1000) NULL',
-    author_role: 'VARCHAR(150) NULL',
-    project_date: 'VARCHAR(80) NULL',
-    source_info: 'VARCHAR(500) NULL',
-    tags_json: 'TEXT NULL',
-    gallery_json: 'TEXT NULL',
-  };
-  const [existing] = await pool.execute('SHOW COLUMNS FROM projects');
-  const names = new Set(existing.map((column) => column.Field));
-  for (const [name, definition] of Object.entries(columns)) {
-    if (!names.has(name)) {
-      await pool.execute(`ALTER TABLE projects ADD COLUMN ${name} ${definition}`);
-    }
-  }
+if (isProduction) {
+  // Render и другие прокси ставят X-Forwarded-Proto — без этого secure-куки не работают.
+  app.set('trust proxy', 1);
 }
 
 function withProjectTags(project) {
@@ -91,9 +48,6 @@ function withProjectTags(project) {
   return { ...rest, tags, gallery, topic_title: topicTitle };
 }
 
-const uploadsDir = path.join(__dirname, 'uploads');
-fs.mkdirSync(uploadsDir, { recursive: true });
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -111,7 +65,7 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: false,
+      secure: 'auto',
       maxAge: 24 * 60 * 60 * 1000,
     },
   }),
@@ -566,11 +520,21 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ message: 'Внутренняя ошибка сервера' });
 });
 
-ensureProjectColumns()
+// В продакшене Express раздаёт собранный фронтенд (dist), сайт, админка,
+// API и загрузки живут на одном домене. В dev-режиме этим занимается Vite.
+const distDir = path.join(__dirname, '..', 'dist');
+if (fs.existsSync(path.join(distDir, 'index.html'))) {
+  app.use(express.static(distDir));
+  app.get(/^(?!\/api\/|\/uploads\/).*/, (_req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
+
+initAll()
   .then(() => {
     app.listen(PORT, () => console.log(`API сервер запущен: http://localhost:${PORT}`));
   })
   .catch((error) => {
-    console.error('Не удалось подготовить таблицу projects:', error);
+    console.error('Не удалось инициализировать базу данных:', error.message);
     process.exitCode = 1;
   });
