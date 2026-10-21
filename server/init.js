@@ -38,6 +38,16 @@ async function ensureTables() {
     created_at TEXT NOT NULL DEFAULT (${CURRENT_TIME})
   )`);
 
+  // Файлы участников: BLOB в той же базе, что и проекты (Turso на хостинге).
+  await pool.query(`CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    mime TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    data BLOB NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (${CURRENT_TIME})
+  )`);
+
   // updated_at обновляется автоматически при любом UPDATE по projects.
   // Рекурсивные триггеры выключены по умолчанию — зацикливания не будет.
   await pool.query(`CREATE TRIGGER IF NOT EXISTS projects_touch

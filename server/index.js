@@ -6,113 +6,23 @@ import bcrypt from 'bcrypt';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { v2 as cloudinary } from 'cloudinary';
 import pool, { uploadsDir, useCloudDb } from './db.js';
 import { initAll } from './init.js';
+import { dbStorage, MAX_FILE_SIZE, fileUrl, discardFiles, removeMediaUrl, sanitizeName } from './storage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = Number(process.env.API_PORT || process.env.PORT || 3001);
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Файлы участников: если задан Cloudinary (CLOUDINARY_URL), новые загрузки уходят
-// в облако и переживают рестарты хостинга; без него — как раньше, на диск.
-const cloudinaryConfigured = Boolean(
-  process.env.CLOUDINARY_URL ||
-  (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET),
-);
-
-if (cloudinaryConfigured) {
-  if (process.env.CLOUDINARY_URL) cloudinary.config(process.env.CLOUDINARY_URL);
-  else {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-    });
-  }
-}
-
-function isCloudinaryUrl(value) {
-  return typeof value === 'string' && value.includes('res.cloudinary.com');
-}
-
-// Разбираем URL ресурса Cloudinary на public_id и тип ресурса,
-// чтобы удалять файлы обратно через API.
-function parseCloudinaryUrl(url) {
-  try {
-    const parts = new URL(url).pathname.split('/').filter(Boolean);
-    const uploadIndex = parts.indexOf('upload');
-    if (uploadIndex < 0) return null;
-    const resourceType = ['image', 'video', 'raw'].includes(parts[1]) ? parts[1] : 'auto';
-    const idParts = parts.slice(uploadIndex + 1);
-    if (idParts[0] && /^v\d+$/.test(idParts[0])) idParts.shift();
-    let publicId = idParts.join('/');
-    // Для image/video расширение в public_id не входит, для raw — входит.
-    if (resourceType !== 'raw') publicId = publicId.replace(/\.[^.\/]+$/, '');
-    return publicId ? { publicId, resourceType } : null;
-  } catch {
-    return null;
-  }
-}
-
-function deleteCloudinaryUrl(url) {
-  const parsed = parseCloudinaryUrl(url);
-  if (!parsed) return Promise.resolve();
-  return new Promise((resolve) => {
-    cloudinary.uploader.destroy(
-      parsed.publicId,
-      { resource_type: parsed.resourceType },
-      () => resolve(),
-    );
-  });
-}
-
-// URL для базы данных: в облаке — полный https-адрес, локально — /uploads/<имя>.
-function fileUrl(file) {
-  if (file.path && /^https?:\/\//.test(file.path)) return file.path;
-  return `/uploads/${file.filename}`;
-}
-
-// Удаление файлов, которые multer уже принял (откат после ошибки валидации).
-async function discardFiles(files) {
-  for (const file of files || []) {
-    try {
-      if (file.path && /^https?:\/\//.test(file.path)) await deleteCloudinaryUrl(file.path);
-      else if (file.path) fs.unlinkSync(file.path);
-    } catch { /* файл мог уже отсутствовать */ }
-  }
-}
-
-// Удаление файла по значению из базы (/uploads/... или ссылка Cloudinary).
-async function removeMediaUrl(value) {
-  if (typeof value !== 'string' || !value) return;
-  try {
-    if (value.startsWith('/uploads/')) {
-      const filename = path.basename(value);
-      if (filename && filename !== '.' && filename !== path.sep) {
-        fs.unlinkSync(path.join(uploadsDir, filename));
-      }
-    } else if (cloudinaryConfigured && isCloudinaryUrl(value)) {
-      await deleteCloudinaryUrl(value);
-    }
-  } catch (error) {
-    if (error.code !== 'ENOENT') console.warn('Не удалось удалить файл:', value, error.message);
-  }
-}
-
 if (isProduction) {
   // Render и другие прокси ставят X-Forwarded-Proto — без этого secure-куки не работают.
   app.set('trust proxy', 1);
 
-  // Смешанный режим (одно хранилище в облаке, второе локально) — самая частая
-  // ошибка при настройке: предупреждаем в лог, чтобы данные не пропадали молча.
-  if (useCloudDb !== cloudinaryConfigured) {
-    console.warn(
-      useCloudDb
-        ? 'ВНИМАНИЕ: база данных в облаке (TURSO_URL), но файлы локальные — CLOUDINARY_URL не задан, загрузки будут теряться при рестарте.'
-        : 'ВНИМАНИЕ: файлы в облаке (CLOUDINARY_URL), но база локальная — TURSO_URL не задан, проекты будут теряться при рестарте.',
-    );
+  // Бесплатный Render стирает локальный диск при каждом рестарте: без TURSO_URL
+  // проекты и файлы будут теряться. Предупреждаем, чтобы это не было сюрпризом.
+  if (!useCloudDb) {
+    console.warn('ВНИМАНИЕ: TURSO_URL не задан — база и файлы лежат на локальном диске и потеряются при рестарте на бесплатном плане.');
   }
 }
 
@@ -148,6 +58,27 @@ function withProjectTags(project) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Отдача файлов участников: сначала строка в таблице files (переживает
+// рестарты вместе с проектами), затем — файлы на диске из старых развёртываний
+// и локальной разработки.
+app.get('/uploads/:name', async (req, res, next) => {
+  const name = sanitizeName(req.params.name);
+  if (!name) return next();
+  try {
+    const [rows] = await pool.execute('SELECT mime, data FROM files WHERE name = ? LIMIT 1', [name]);
+    if (rows.length) {
+      const data = Buffer.from(rows[0].data);
+      res.setHeader('Content-Type', rows[0].mime || 'application/octet-stream');
+      res.setHeader('Content-Length', String(data.length));
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.end(data);
+    }
+  } catch (error) {
+    console.warn('Не удалось прочитать файл из базы:', name, error.message);
+  }
+  next();
+});
+
 app.use(
   '/uploads',
   express.static(uploadsDir),
@@ -168,41 +99,10 @@ app.use(
   }),
 );
 
-// Движок multer: облако (если настроено) или локальный диск.
-const storage = cloudinaryConfigured
-  ? {
-      _handleFile(req, file, cb) {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: process.env.CLOUDINARY_FOLDER || 'svyaz-pokoleniy',
-            resource_type: 'auto',
-          },
-          (error, result) => {
-            if (error) return cb(error);
-            cb(null, {
-              path: result.secure_url,
-              filename: result.public_id,
-              size: result.bytes,
-            });
-          },
-        );
-        file.stream.pipe(stream);
-      },
-      _removeFile(req, file, cb) {
-        deleteCloudinaryUrl(file.path || '').then(() => cb(null), cb);
-      },
-    }
-  : multer.diskStorage({
-      destination: (_req, _file, cb) => cb(null, uploadsDir),
-      filename: (_req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`);
-      },
-    });
-
+// Движок multer: файлы пишутся строками в таблицу files (см. storage.js).
 const upload = multer({
-  storage,
-  limits: { fileSize: 60 * 1024 * 1024, files: 16 },
+  storage: dbStorage,
+  limits: { fileSize: MAX_FILE_SIZE, files: 16 },
   fileFilter: (_req, file, cb) => {
     const allowed = file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/') || file.mimetype === 'application/pdf';
     if (allowed) cb(null, true);
@@ -346,7 +246,7 @@ app.post('/api/projects', (req, res) => {
     if (uploadError) {
       const message =
         uploadError.code === 'LIMIT_FILE_SIZE'
-          ? 'Размер файла не должен превышать 60 МБ'
+          ? 'Размер файла не должен превышать 16 МБ'
           : uploadError.code === 'LIMIT_FILE_COUNT'
             ? 'Можно прикрепить не более 16 файлов'
             : uploadError.message || 'Ошибка загрузки файла';

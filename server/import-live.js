@@ -3,15 +3,15 @@
 // (логин/пароль можно не указывать — возьмутся из LIVE_USERNAME / LIVE_PASSWORD).
 //
 // Что делает: логинится в API живого сайта, забирает все проекты из админки,
-// файлы из /uploads скачивает и (если настроен Cloudinary) заливает в облако,
-// после чего записи upsert'ятся в текущую базу (SQLite-файл или Turso по TURSO_URL).
-import fs from 'node:fs';
-import path from 'node:path';
+// скачивает файлы из /uploads и складывает их в таблицу files текущей базы
+// (SQLite-файл локально или Turso по TURSO_URL), после чего записи
+// upsert'ятся в базу проектов.
 import dotenv from 'dotenv';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { v2 as cloudinary } from 'cloudinary';
-import pool, { uploadsDir, useCloudDb } from './db.js';
+import pool, { useCloudDb } from './db.js';
 import { initAll } from './init.js';
+import { saveBuffer } from './storage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -29,55 +29,23 @@ const liveUrl = (process.argv[2] || process.env.LIVE_URL || '').replace(/\/$/, '
 const username = process.argv[3] || process.env.LIVE_USERNAME || 'admin';
 const password = process.argv[4] || process.env.LIVE_PASSWORD;
 
-const cloudinaryConfigured = Boolean(
-  process.env.CLOUDINARY_URL ||
-  (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET),
-);
-
-if (cloudinaryConfigured) {
-  if (process.env.CLOUDINARY_URL) cloudinary.config(process.env.CLOUDINARY_URL);
-  else {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-    });
-  }
-}
-
-function uploadToCloudinary(buffer) {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: process.env.CLOUDINARY_FOLDER || 'svyaz-pokoleniy', resource_type: 'auto' },
-      (error, result) => (error ? reject(error) : resolve(result.secure_url)),
-    );
-    stream.end(buffer);
-  });
-}
-
-// Ссылка вида /uploads/... или абсолютная на живом сайте → скачиваем файл
-// и возвращаем новый адрес (облако) или локальный путь.
+// Ссылка вида /uploads/... или абсолютная на живом сайте → скачиваем файл,
+// кладём в таблицу files и возвращаем новый адрес /uploads/<имя>.
 async function migrateFile(url) {
   if (!url || typeof url !== 'string') return url;
   const isRelative = url.startsWith('/uploads/');
   const isLiveHost = /^https?:\/\//.test(url) && url.startsWith(liveUrl);
   if (!isRelative && !isLiveHost) return url;
 
-    const sourceUrl = isRelative ? `${liveUrl}${url}` : url;
+  const sourceUrl = isRelative ? `${liveUrl}${url}` : url;
   try {
     const response = await fetch(sourceUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const buffer = Buffer.from(await response.arrayBuffer());
+    const name = path.basename(new URL(sourceUrl).pathname);
+    const saved = await saveBuffer(buffer, { name, mime: response.headers.get('content-type') || 'application/octet-stream' });
     migratedFiles += 1;
-
-    if (cloudinaryConfigured) {
-      return await uploadToCloudinary(buffer);
-    }
-
-    const filename = path.basename(new URL(sourceUrl).pathname);
-    const target = path.join(uploadsDir, filename);
-    if (!fs.existsSync(target)) fs.writeFileSync(target, buffer);
-    return `/uploads/${filename}`;
+    return `/uploads/${saved}`;
   } catch (error) {
     console.warn(`  файл не перенесён (${sourceUrl}): ${error.message} — ссылка оставлена как есть`);
     return url;
@@ -93,10 +61,6 @@ async function main() {
   }
 
   await initAll();
-  if (useCloudDb && !cloudinaryConfigured) {
-    console.warn('ВНИМАНИЕ: база в облаке (TURSO_URL задан), а CLOUDINARY_URL — нет.');
-    console.warn('Файлы сохранятся локально в server/uploads и НЕ попадут на хостинг. Пропишите CLOUDINARY_* в server/.env и запустите снова.');
-  }
   console.log(`Подключаюсь к ${liveUrl} как ${username}...`);
 
   const loginResponse = await fetch(`${liveUrl}/api/auth/login`, {
@@ -147,8 +111,9 @@ async function main() {
   }
 
   const [count] = await pool.execute('SELECT COUNT(*) AS total FROM projects');
+  const [filesCount] = await pool.execute('SELECT COUNT(*) AS total FROM files');
   console.log(`Готово: импортировано ${imported} проектов (файлов перенесено: ${migratedFiles}).`);
-  console.log(`В базе сейчас проектов: ${count[0].total} (${useCloudDb ? 'Turso' : 'локальный файл'}; облако файлов: ${cloudinaryConfigured ? 'включено' : 'выключено'}).`);
+  console.log(`В базе сейчас: проектов ${count[0].total}, файлов ${filesCount[0].total} (${useCloudDb ? 'Turso' : 'локальный файл'}).`);
 
   await pool.end();
 }
