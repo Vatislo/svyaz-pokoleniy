@@ -1,4 +1,4 @@
-# Депloy на Render: New → Blueprint → выбрать этот репозиторий.
+# Деплой на Render: New → Blueprint → выбрать этот репозиторий.
 # Сайт, админка и API будут работать на одном адресе *.onrender.com.
 services:
   - type: web
@@ -19,19 +19,31 @@ services:
         value: admin
       - key: ADMIN_PASSWORD
         generateValue: true
+      # Постоянное хранение данных: значений нет в репозитории (секреты),
+      # заполняются при развёртывании Blueprint или в настройках сервиса.
+      #  - TURSO_URL / TURSO_AUTH_TOKEN — база Turso (https://app.turso.tech):
+      #    проекты, статусы и админы переживают рестарты и деплои.
+      #  - CLOUDINARY_URL — файлы участников (https://cloudinary.com):
+      #    картинки и видео хранятся в облаке, а не на диске сервиса.
+      - key: TURSO_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
 
-# Важно о бесплатном плане Render:
-# - файловая система эфемерная: SQLite-база и загрузки создаются заново при
-#   каждом деплое/перезапуске, сайт откатится к начальным данным из seed.
-# - Чтобы данные сохранялись, возьмите платный план с Persistent Disk и
-#   раскомментируйте блоки ниже (диск монтируется в /var/data):
+# Если переменные выше не задать, всё продолжает работать «как раньше»:
+# SQLite-файл и загрузки лежат на диске сервиса и стираются при каждом
+# рестарте/деплое бесплатного плана (сайт откатится к данным из seed).
+#
+# Альтернатива без Turso/Cloudinary — платный план + Persistent Disk:
+# раскомментируйте блок ниже и задайте DB_PATH / UPLOADS_DIR:
 #
 # disk:
 #   name: svyaz-data
 #   mountPath: /var/data
 #   sizeGB: 1
 #
-# и добавьте в envVars:
 #       - key: DB_PATH
 #         value: /var/data/app.db
 #       - key: UPLOADS_DIR

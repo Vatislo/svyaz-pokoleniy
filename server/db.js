@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
-import Database from 'better-sqlite3';
+import { createClient } from '@libsql/client';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.join(__dirname, '.env');
@@ -14,6 +14,9 @@ if (!fs.existsSync(envPath) && fs.existsSync(path.join(__dirname, '.env.example'
 
 dotenv.config({ path: envPath });
 
+// Где хранится база:
+//  - TURSO_URL задан (Render) — облачная SQLite (Turso/libSQL), данные переживают рестарты;
+//  - иначе — локальный файл server/data/app.db (для разработки и миграций).
 export const DB_PATH = process.env.DB_PATH
   ? path.resolve(process.env.DB_PATH)
   : path.join(__dirname, 'data', 'app.db');
@@ -22,38 +25,63 @@ export const uploadsDir = process.env.UPLOADS_DIR
   ? path.resolve(process.env.UPLOADS_DIR)
   : path.join(__dirname, 'uploads');
 
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('busy_timeout = 5000');
+const tursoUrl = process.env.TURSO_URL;
+const tursoToken = process.env.TURSO_AUTH_TOKEN;
+export const useCloudDb = Boolean(tursoUrl);
 
-function run(sql, params = []) {
+let client;
+
+if (useCloudDb) {
+  client = createClient({ url: tursoUrl, authToken: tursoToken });
+} else {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  client = createClient({ url: `file:${DB_PATH}` });
+  // Режимы работают только для локального файла; к облачной базе не применяются.
+  await client.execute('PRAGMA journal_mode = WAL');
+  await client.execute('PRAGMA busy_timeout = 5000');
+}
+
+function toPlainRows(resultSet) {
+  return resultSet.rows.map((row) => {
+    const source = { ...row };
+    const out = {};
+    for (const [key, value] of Object.entries(source)) {
+      out[key] = typeof value === 'bigint' ? Number(value) : value;
+    }
+    return out;
+  });
+}
+
+// Адаптер с интерфейсом mysql2/promise: index.js/init.js/migration не знают о libSQL.
+async function run(sql, params = []) {
   const text = sql.trim();
+  const request = params.length ? { sql: text, args: params } : text;
+  const result = await client.execute(request);
   const verb = text.split(/\s+/, 1)[0].toUpperCase();
 
   if (verb === 'SELECT' || verb === 'PRAGMA') {
-    return [db.prepare(text).all(...params)];
+    return [toPlainRows(result)];
   }
 
-  const info = db.prepare(text).run(...params);
-  return [{ insertId: Number(info.lastInsertRowid), affectedRows: info.changes }];
+  return [{
+    insertId: Number(result.lastInsertRowid ?? 0),
+    affectedRows: result.rowsAffected,
+  }];
 }
 
-// Тонкий адаптер поверх better-sqlite3 с интерфейсом mysql2/promise,
-// чтобы index.js/init.js не пришлось переписывать под синхронный API.
 const pool = {
   execute: async (sql, params = []) => run(sql, params),
   query: async (sql, params = []) => {
     if (params.length) throw new Error('pool.query поддерживается только без параметров');
-    db.exec(sql);
+    await client.executeMultiple(sql);
     return [[], []];
   },
   end: async () => {
-    db.close();
+    client.close();
   },
 };
 
-export { db };
+export { client };
 export default pool;

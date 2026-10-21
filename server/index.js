@@ -6,7 +6,8 @@ import bcrypt from 'bcrypt';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import pool, { uploadsDir } from './db.js';
+import { v2 as cloudinary } from 'cloudinary';
+import pool, { uploadsDir, useCloudDb } from './db.js';
 import { initAll } from './init.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,9 +15,105 @@ const app = express();
 const PORT = Number(process.env.API_PORT || process.env.PORT || 3001);
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Файлы участников: если задан Cloudinary (CLOUDINARY_URL), новые загрузки уходят
+// в облако и переживают рестарты хостинга; без него — как раньше, на диск.
+const cloudinaryConfigured = Boolean(
+  process.env.CLOUDINARY_URL ||
+  (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET),
+);
+
+if (cloudinaryConfigured) {
+  if (process.env.CLOUDINARY_URL) cloudinary.config(process.env.CLOUDINARY_URL);
+  else {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+  }
+}
+
+function isCloudinaryUrl(value) {
+  return typeof value === 'string' && value.includes('res.cloudinary.com');
+}
+
+// Разбираем URL ресурса Cloudinary на public_id и тип ресурса,
+// чтобы удалять файлы обратно через API.
+function parseCloudinaryUrl(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    const uploadIndex = parts.indexOf('upload');
+    if (uploadIndex < 0) return null;
+    const resourceType = ['image', 'video', 'raw'].includes(parts[1]) ? parts[1] : 'auto';
+    const idParts = parts.slice(uploadIndex + 1);
+    if (idParts[0] && /^v\d+$/.test(idParts[0])) idParts.shift();
+    let publicId = idParts.join('/');
+    // Для image/video расширение в public_id не входит, для raw — входит.
+    if (resourceType !== 'raw') publicId = publicId.replace(/\.[^.\/]+$/, '');
+    return publicId ? { publicId, resourceType } : null;
+  } catch {
+    return null;
+  }
+}
+
+function deleteCloudinaryUrl(url) {
+  const parsed = parseCloudinaryUrl(url);
+  if (!parsed) return Promise.resolve();
+  return new Promise((resolve) => {
+    cloudinary.uploader.destroy(
+      parsed.publicId,
+      { resource_type: parsed.resourceType },
+      () => resolve(),
+    );
+  });
+}
+
+// URL для базы данных: в облаке — полный https-адрес, локально — /uploads/<имя>.
+function fileUrl(file) {
+  if (file.path && /^https?:\/\//.test(file.path)) return file.path;
+  return `/uploads/${file.filename}`;
+}
+
+// Удаление файлов, которые multer уже принял (откат после ошибки валидации).
+async function discardFiles(files) {
+  for (const file of files || []) {
+    try {
+      if (file.path && /^https?:\/\//.test(file.path)) await deleteCloudinaryUrl(file.path);
+      else if (file.path) fs.unlinkSync(file.path);
+    } catch { /* файл мог уже отсутствовать */ }
+  }
+}
+
+// Удаление файла по значению из базы (/uploads/... или ссылка Cloudinary).
+async function removeMediaUrl(value) {
+  if (typeof value !== 'string' || !value) return;
+  try {
+    if (value.startsWith('/uploads/')) {
+      const filename = path.basename(value);
+      if (filename && filename !== '.' && filename !== path.sep) {
+        fs.unlinkSync(path.join(uploadsDir, filename));
+      }
+    } else if (cloudinaryConfigured && isCloudinaryUrl(value)) {
+      await deleteCloudinaryUrl(value);
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.warn('Не удалось удалить файл:', value, error.message);
+  }
+}
+
 if (isProduction) {
   // Render и другие прокси ставят X-Forwarded-Proto — без этого secure-куки не работают.
   app.set('trust proxy', 1);
+
+  // Смешанный режим (одно хранилище в облаке, второе локально) — самая частая
+  // ошибка при настройке: предупреждаем в лог, чтобы данные не пропадали молча.
+  if (useCloudDb !== cloudinaryConfigured) {
+    console.warn(
+      useCloudDb
+        ? 'ВНИМАНИЕ: база данных в облаке (TURSO_URL), но файлы локальные — CLOUDINARY_URL не задан, загрузки будут теряться при рестарте.'
+        : 'ВНИМАНИЕ: файлы в облаке (CLOUDINARY_URL), но база локальная — TURSO_URL не задан, проекты будут теряться при рестарте.',
+    );
+  }
 }
 
 function withProjectTags(project) {
@@ -71,13 +168,37 @@ app.use(
   }),
 );
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`);
-  },
-});
+// Движок multer: облако (если настроено) или локальный диск.
+const storage = cloudinaryConfigured
+  ? {
+      _handleFile(req, file, cb) {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: process.env.CLOUDINARY_FOLDER || 'svyaz-pokoleniy',
+            resource_type: 'auto',
+          },
+          (error, result) => {
+            if (error) return cb(error);
+            cb(null, {
+              path: result.secure_url,
+              filename: result.public_id,
+              size: result.bytes,
+            });
+          },
+        );
+        file.stream.pipe(stream);
+      },
+      _removeFile(req, file, cb) {
+        deleteCloudinaryUrl(file.path || '').then(() => cb(null), cb);
+      },
+    }
+  : multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, uploadsDir),
+      filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`);
+      },
+    });
 
 const upload = multer({
   storage,
@@ -257,23 +378,18 @@ app.post('/api/projects', (req, res) => {
     // В эти поля разрешён ровно один файл, в images сколько угодно (в пределах лимита).
     const singleFileFields = new Set(['image', 'media', 'beforeImage', 'afterImage']);
     const files = {};
+    // Откат всех уже сохранённых файлов при отказе из-за ошибки клиента.
+    const rejectUpload = async (status, message) => {
+      await discardFiles(req.files || []);
+      return res.status(status).json({ message });
+    };
     for (const file of req.files || []) {
       const normalizedField = fieldAliases[file.fieldname];
       if (!normalizedField) {
-        for (const uploaded of req.files || []) {
-          try { fs.unlinkSync(uploaded.path); } catch { /* файл мог уже отсутствовать */ }
-        }
-        return res.status(400).json({
-          message: `Неизвестное поле файла "${file.fieldname}". Используй image для обложки, images для фотографий, media для материала, beforeImage и afterImage для сравнения.`,
-        });
+        return rejectUpload(400, `Неизвестное поле файла "${file.fieldname}". Используй image для обложки, images для фотографий, media для материала, beforeImage и afterImage для сравнения.`);
       }
       if (singleFileFields.has(normalizedField) && files[normalizedField]) {
-        for (const uploaded of req.files || []) {
-          try { fs.unlinkSync(uploaded.path); } catch { /* файл мог уже отсутствовать */ }
-        }
-        return res.status(400).json({
-          message: `Для поля "${normalizedField}" можно загрузить только один файл.`,
-        });
+        return rejectUpload(400, `Для поля "${normalizedField}" можно загрузить только один файл.`);
       }
       files[normalizedField] = files[normalizedField] || [];
       files[normalizedField].push(file);
@@ -298,22 +414,22 @@ app.post('/api/projects', (req, res) => {
       const allowedTopics = new Set(['school', 'family', 'people', 'places', 'objects', 'creative']);
 
       if (!title || !author || !description || !cover) {
-        return res.status(400).json({ message: 'Заполните название, описание, автора и добавьте обложку' });
+        return rejectUpload(400, 'Заполните название, описание, автора и добавьте обложку');
       }
-      if (!cover.mimetype.startsWith('image/')) return res.status(400).json({ message: 'Обложка должна быть изображением' });
-      if (cover.size > 8 * 1024 * 1024) return res.status(400).json({ message: 'Обложка не должна превышать 8 МБ' });
-      if (!allowedTypes.has(projectType)) return res.status(400).json({ message: 'Неизвестный формат проекта' });
-      if (!allowedTopics.has(topic)) return res.status(400).json({ message: 'Выберите тему проекта' });
-      if (projectType === 'video' && (!media || !media.mimetype.startsWith('video/'))) return res.status(400).json({ message: 'Для проекта-видео прикрепите видеофайл' });
-      if (projectType === 'gif' && (!media || media.mimetype !== 'image/gif')) return res.status(400).json({ message: 'Для GIF-проекта прикрепите GIF-файл' });
-      if (projectType === 'pair' && (!beforeImage || !afterImage || !beforeImage.mimetype.startsWith('image/') || !afterImage.mimetype.startsWith('image/'))) return res.status(400).json({ message: 'Для сравнения нужны два изображения' });
-      if (gallery.length > 12) return res.status(400).json({ message: 'Можно приложить не более 12 фотографий' });
+      if (!cover.mimetype.startsWith('image/')) return rejectUpload(400, 'Обложка должна быть изображением');
+      if (cover.size > 8 * 1024 * 1024) return rejectUpload(400, 'Обложка не должна превышать 8 МБ');
+      if (!allowedTypes.has(projectType)) return rejectUpload(400, 'Неизвестный формат проекта');
+      if (!allowedTopics.has(topic)) return rejectUpload(400, 'Выберите тему проекта');
+      if (projectType === 'video' && (!media || !media.mimetype.startsWith('video/'))) return rejectUpload(400, 'Для проекта-видео прикрепите видеофайл');
+      if (projectType === 'gif' && (!media || media.mimetype !== 'image/gif')) return rejectUpload(400, 'Для GIF-проекта прикрепите GIF-файл');
+      if (projectType === 'pair' && (!beforeImage || !afterImage || !beforeImage.mimetype.startsWith('image/') || !afterImage.mimetype.startsWith('image/'))) return rejectUpload(400, 'Для сравнения нужны два изображения');
+      if (gallery.length > 12) return rejectUpload(400, 'Можно приложить не более 12 фотографий');
       for (const photo of gallery) {
-        if (!photo.mimetype.startsWith('image/')) return res.status(400).json({ message: 'В списке фотографий могут быть только изображения' });
-        if (photo.size > 8 * 1024 * 1024) return res.status(400).json({ message: 'Каждая фотография не должна превышать 8 МБ' });
+        if (!photo.mimetype.startsWith('image/')) return rejectUpload(400, 'В списке фотографий могут быть только изображения');
+        if (photo.size > 8 * 1024 * 1024) return rejectUpload(400, 'Каждая фотография не должна превышать 8 МБ');
       }
       if (title.length > 200 || author.length > 150 || email.length > 255 || authorRole.length > 150 || sourceInfo.length > 500) {
-        return res.status(400).json({ message: 'Некоторые поля слишком длинные' });
+        return rejectUpload(400, 'Некоторые поля слишком длинные');
       }
 
       let tags = [];
@@ -321,11 +437,11 @@ app.post('/api/projects', (req, res) => {
         const rawTags = JSON.parse(String(req.body?.tags || '[]'));
         if (Array.isArray(rawTags)) tags = [...new Set(rawTags.map((tag) => String(tag).replace(/^#+/, '').trim()).filter(Boolean))].slice(0, 20);
       } catch { tags = []; }
-      const imageUrl = `/uploads/${cover.filename}`;
-      const mediaUrl = media ? `/uploads/${media.filename}` : null;
-      const beforeUrl = beforeImage ? `/uploads/${beforeImage.filename}` : null;
-      const afterUrl = afterImage ? `/uploads/${afterImage.filename}` : null;
-      const galleryUrls = gallery.map((photo) => `/uploads/${photo.filename}`);
+      const imageUrl = fileUrl(cover);
+      const mediaUrl = media ? fileUrl(media) : null;
+      const beforeUrl = beforeImage ? fileUrl(beforeImage) : null;
+      const afterUrl = afterImage ? fileUrl(afterImage) : null;
+      const galleryUrls = gallery.map((photo) => fileUrl(photo));
 
       const [result] = await pool.execute(
         `INSERT INTO projects
@@ -337,6 +453,7 @@ app.post('/api/projects', (req, res) => {
 
       res.status(201).json({ success: true, id: result.insertId, message: 'Проект отправлен на рассмотрение администратору' });
     } catch (error) {
+      await discardFiles(req.files || []);
       console.error('Ошибка сохранения проекта:', error);
       res.status(500).json({ message: 'Не удалось сохранить проект' });
     }
@@ -364,16 +481,16 @@ app.patch('/api/admin/projects/:id', requireAdmin, (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isSafeInteger(id) || id < 1) {
-        for (const file of uploaded) { try { fs.unlinkSync(file.path); } catch {} }
+        await discardFiles(uploaded);
         return res.status(400).json({ message: 'Некорректный ID проекта' });
       }
       const [rows] = await pool.execute('SELECT * FROM projects WHERE id = ? LIMIT 1', [id]);
       if (!rows.length) {
-        for (const file of uploaded) { try { fs.unlinkSync(file.path); } catch {} }
+        await discardFiles(uploaded);
         return res.status(404).json({ message: 'Проект не найден' });
       }
       if (uploaded.some((file) => file.fieldname !== 'image' || !file.mimetype.startsWith('image/'))) {
-        for (const file of uploaded) { try { fs.unlinkSync(file.path); } catch {} }
+        await discardFiles(uploaded);
         return res.status(400).json({ message: 'Можно загрузить только изображение обложки в поле image' });
       }
       const body = req.body || {};
@@ -389,15 +506,15 @@ app.patch('/api/admin/projects/:id', requireAdmin, (req, res) => {
       const projectDate = String(body.project_date ?? rows[0].project_date ?? '').trim();
       const sourceInfo = String(body.source_info ?? rows[0].source_info ?? '').trim();
       if (!title || !description || !author) {
-        for (const file of uploaded) { try { fs.unlinkSync(file.path); } catch {} }
+        await discardFiles(uploaded);
         return res.status(400).json({ message: 'Название, описание и автор обязательны' });
       }
       if (!allowedTopics.has(topic) || !allowedTypes.has(projectType)) {
-        for (const file of uploaded) { try { fs.unlinkSync(file.path); } catch {} }
+        await discardFiles(uploaded);
         return res.status(400).json({ message: 'Выбран неизвестный раздел или тип проекта' });
       }
       if (title.length > 200 || author.length > 150 || email.length > 255 || authorRole.length > 150 || sourceInfo.length > 500 || projectDate.length > 80) {
-        for (const file of uploaded) { try { fs.unlinkSync(file.path); } catch {} }
+        await discardFiles(uploaded);
         return res.status(400).json({ message: 'Одно из полей превышает допустимую длину' });
       }
       let tags = [];
@@ -408,19 +525,15 @@ app.patch('/api/admin/projects/:id', requireAdmin, (req, res) => {
         else tags = [...new Set(parsed)].slice(0, 20);
       } catch { tags = String(body.tags || '').split(/[,;\s]+/).map((tag) => tag.replace(/^#+/, '').trim()).filter(Boolean).slice(0, 20); }
       const newCover = uploaded.find((file) => file.fieldname === 'image');
-      const imageUrl = newCover ? `/uploads/${newCover.filename}` : rows[0].image_url;
+      const imageUrl = newCover ? fileUrl(newCover) : rows[0].image_url;
       await pool.execute(
         `UPDATE projects SET title = ?, description = ?, author = ?, email = ?, image_url = ?, topic = ?, project_type = ?, author_role = ?, project_date = ?, source_info = ?, tags_json = ? WHERE id = ?`,
         [title, description, author, email, imageUrl, topic, projectType, authorRole || null, projectDate || null, sourceInfo || null, JSON.stringify(tags), id],
       );
-      if (newCover && typeof rows[0].image_url === 'string' && rows[0].image_url.startsWith('/uploads/')) {
-        const oldName = path.basename(rows[0].image_url);
-        const oldPath = path.join(uploadsDir, oldName);
-        if (oldName && oldName !== '.' && oldName !== path.sep) { try { fs.unlinkSync(oldPath); } catch {} }
-      }
+      if (newCover) await removeMediaUrl(rows[0].image_url);
       res.json({ success: true, id, message: 'Карточка проекта обновлена' });
     } catch (error) {
-      for (const file of uploaded) { try { fs.unlinkSync(file.path); } catch {} }
+      await discardFiles(uploaded);
       console.error('Ошибка редактирования проекта:', error);
       res.status(500).json({ message: 'Не удалось сохранить изменения проекта' });
     }
@@ -440,32 +553,14 @@ app.delete('/api/admin/projects/:id/permanent', requireAdmin, async (req, res) =
       return res.status(409).json({ message: 'Сначала переместите проект в раздел «Удалённые»' });
     }
     await pool.execute('DELETE FROM projects WHERE id = ?', [id]);
-    for (const key of ['image_url', 'media_url', 'before_image_url', 'after_image_url']) {
-      const value = rows[0][key];
-      if (typeof value === 'string' && value.startsWith('/uploads/')) {
-        const filename = path.basename(value);
-        if (filename && filename !== '.' && filename !== path.sep) {
-          try { fs.unlinkSync(path.join(uploadsDir, filename)); } catch (error) {
-            if (error.code !== 'ENOENT') console.warn('Не удалось удалить файл проекта:', filename, error.message);
-          }
-        }
-      }
-    }
+    const mediaUrls = ['image_url', 'media_url', 'before_image_url', 'after_image_url']
+      .map((key) => rows[0][key]);
     // Дополнительные фотографии проекта (список ссылок в gallery_json)
     try {
       const gallery = JSON.parse(rows[0].gallery_json || '[]');
-      if (Array.isArray(gallery)) {
-        for (const value of gallery) {
-          if (typeof value !== 'string' || !value.startsWith('/uploads/')) continue;
-          const filename = path.basename(value);
-          if (filename && filename !== '.' && filename !== path.sep) {
-            try { fs.unlinkSync(path.join(uploadsDir, filename)); } catch (error) {
-              if (error.code !== 'ENOENT') console.warn('Не удалось удалить фотографию проекта:', filename, error.message);
-            }
-          }
-        }
-      }
+      if (Array.isArray(gallery)) mediaUrls.push(...gallery);
     } catch { /* некорректный JSON, пропускаем */ }
+    for (const value of mediaUrls) await removeMediaUrl(value);
     return res.json({ success: true, id, message: 'Проект безвозвратно удалён' });
   } catch (error) {
     console.error('Ошибка безвозвратного удаления проекта:', error);
