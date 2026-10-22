@@ -49,7 +49,7 @@ function withProjectTags(project) {
   const topicTitle = topic ? ({
     school: 'Школа: тогда и сейчас', family: 'Семейные истории',
     people: 'Люди и профессии', places: 'Памятные места',
-    objects: 'Предметы и традиции', creative: 'Творческие работы',
+    objects: 'Музеи', creative: 'Творческие работы',
   }[topic] || 'Материал участника') : 'Материал участника';
   const { tags_json: _tagsJson, gallery_json: _galleryJson, ...rest } = project;
   return { ...rest, tags, gallery, topic_title: topicTitle };
