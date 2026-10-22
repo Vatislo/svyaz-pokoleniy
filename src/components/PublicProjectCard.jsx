@@ -2,7 +2,7 @@ import { ArrowUpRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SafeImage } from '@/components/SafeImage'
 
-const typeNames = { photo: 'Фотография', story: 'Текст', video: 'Видео', gif: 'GIF-анимация', pair: 'Тогда / сейчас', other: 'Другое' }
+const typeNames = { photo: 'Фотография', story: 'Текст', video: 'Видео', gif: 'GIF-анимация', pair: 'Школа', other: 'Другое' }
 
 export function PublicProjectCard({ project }) {
   const tags = Array.isArray(project.tags) ? project.tags : []
