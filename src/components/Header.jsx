@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Menu, Moon, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,7 +11,6 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { cn } from 'cn'
 import { useTheme } from '@/lib/theme'
-import { api } from '@/lib/api'
 import content from '@/data/content.json'
 
 function ThemeToggle({ className }) {
@@ -43,56 +42,39 @@ function ThemeToggle({ className }) {
   )
 }
 
+// Активный пункт — залитая пилюля, неактивный — тихая подпись с подсветкой
+// при наведении.
 function navLinkClass(active) {
   return cn(
-    'inline-flex h-9 items-center rounded-full px-4 text-sm font-semibold transition-colors',
+    'inline-flex h-9 items-center rounded-full border px-4 text-sm font-semibold transition-colors',
     active
-      ? 'bg-graphite text-stone'
-      : 'border border-transparent text-graphite-soft hover:border-stone-line hover:bg-stone-deep hover:text-graphite',
+      ? 'border-transparent bg-graphite text-stone'
+      : 'border-transparent text-graphite-soft hover:border-stone-line hover:bg-stone-deep hover:text-graphite',
   )
 }
 
 export function Header({ path }) {
   const [open, setOpen] = useState(false)
-  // Админ вошёл в систему? Проверяем сессию и слушаем событие,
-  // которое страница администратора шлёт после входа и выхода.
-  const [adminAuthed, setAdminAuthed] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-
-    const check = () => {
-      api('/api/auth/me')
-        .then((result) => { if (!cancelled) setAdminAuthed(Boolean(result?.authenticated)) })
-        .catch(() => { if (!cancelled) setAdminAuthed(false) })
-    }
-
-    check()
-    window.addEventListener('auth-changed', check)
-    return () => {
-      cancelled = true
-      window.removeEventListener('auth-changed', check)
-    }
-  }, [])
-
-  const isAdmin = path === '/admin'
-  const adminLabel = adminAuthed ? 'Администрирование' : 'Вход'
 
   return (
     <header className="sticky top-0 z-50 border-b border-stone-line bg-stone/85 backdrop-blur-md">
-      <div className="shell flex h-16 items-center gap-4">
+      <div className="shell flex h-16 items-center gap-3">
         {/* Логотип */}
         <a
           href="#/"
-          className="flex min-w-0 items-center gap-2 text-graphite"
+          className="group flex min-w-0 items-center gap-2 text-graphite"
           aria-label={content.project.title}
         >
-          <span className="text-lg text-accent" aria-hidden="true">
+          <span
+            className="text-lg text-accent transition-transform duration-300 group-hover:rotate-90"
+            aria-hidden="true"
+          >
             {content.project.mark}
           </span>
 
           <span className="display-title truncate text-lg">
-            {content.project.title}
+            <span className="hidden sm:inline">{content.project.title}</span>
+            <span className="sm:hidden">{content.project.shortTitle}</span>
           </span>
         </a>
 
@@ -116,19 +98,13 @@ export function Header({ path }) {
             )
           })}
 
-          {/* Админ-панель: «Вход» до авторизации, «Администрирование» после */}
-          <a
-            href="#/admin"
-            aria-current={isAdmin ? 'page' : undefined}
-            className={cn(
-              navLinkClass(isAdmin),
-              'ml-1',
-            )}
-          >
-            {adminLabel}
-          </a>
+          <Separator
+            orientation="vertical"
+            className="mx-2 h-5 bg-stone-line"
+            aria-hidden="true"
+          />
 
-          <ThemeToggle className="ml-2" />
+          <ThemeToggle />
         </nav>
 
         {/* Навигация для телефона */}
@@ -162,7 +138,7 @@ export function Header({ path }) {
 
               <nav
                 aria-label={content.ui.menu}
-                className="flex flex-col gap-1 px-4"
+                className="flex flex-col items-start gap-2 px-4"
               >
                 {content.nav.map((item) => {
                   const active = path === item.href.replace(/^#/, '')
@@ -184,21 +160,6 @@ export function Header({ path }) {
                     </a>
                   )
                 })}
-
-                {/* Админ-панель в мобильном меню */}
-                <a
-                  href="#/admin"
-                  aria-current={isAdmin ? 'page' : undefined}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    'flex items-center rounded-r-full border-l-4 py-2.5 pl-4 text-base font-semibold transition-colors',
-                    isAdmin
-                      ? 'border-accent bg-stone-deep text-graphite'
-                      : 'border-transparent text-graphite-soft hover:bg-stone-deep hover:text-graphite',
-                  )}
-                >
-                  {adminLabel}
-                </a>
               </nav>
             </SheetContent>
           </Sheet>

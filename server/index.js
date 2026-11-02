@@ -5,6 +5,7 @@ import multer from 'multer';
 import bcrypt from 'bcrypt';
 import path from 'node:path';
 import fs from 'node:fs';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import pool, { uploadsDir, useCloudDb } from './db.js';
 import { initAll } from './init.js';
@@ -58,6 +59,31 @@ function withProjectTags(project) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// --- Работа в двух инстансах (подробности в README, раздел «Два сервиса») ---
+// ADMIN_ROUTES=off — публичный инстанс: маршрутов /api/auth/* и /api/admin/*
+//   нет вообще (404), а не «спрятаны за паролем».
+// GATEWAY_SECRET — задаётся ТОЛЬКО на админском инстансе: пока запрос не придёт
+//   с заголовком x-gateway-secret, админский API не отвечает извне, кроме /api/health.
+//   Секрет шлют панель (прокси) и публичный инстанс (пересылка заявок).
+const adminRoutesEnabled = process.env.ADMIN_ROUTES !== 'off';
+const gatewaySecret = process.env.GATEWAY_SECRET || '';
+const submitForwardUrl = (process.env.SUBMIT_FORWARD_URL || '').replace(/\/+$/, '');
+
+if (adminRoutesEnabled && gatewaySecret) {
+  app.use((req, res, next) => {
+    if (req.path === '/api/health') return next();
+    if (req.get('x-gateway-secret') === gatewaySecret) return next();
+    // 404 вместо 403: не подтверждаем, что адрес вообще существует.
+    return res.status(404).json({ message: 'Not found' });
+  });
+}
+
+if (!adminRoutesEnabled) {
+  app.use(['/api/auth', '/api/admin'], (_req, res) => {
+    res.status(404).json({ message: 'Not found' });
+  });
+}
+
 // Отдача файлов участников: сначала строка в таблице files (переживает
 // рестарты вместе с проектами), затем — файлы на диске из старых развёртываний
 // и локальной разработки.
@@ -84,20 +110,24 @@ app.use(
   express.static(uploadsDir),
 );
 
-app.use(
-  session({
-    name: 'svyaz.sid',
-    secret: process.env.SESSION_SECRET || 'svyaz-pokoleniy-local-session-secret',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: 'auto',
-      maxAge: 24 * 60 * 60 * 1000,
-    },
-  }),
-);
+// Сессии нужны только админским маршрутам; на публичном инстансе (ADMIN_ROUTES=off)
+// их не монтируем вовсе — без входа кука и не создаётся.
+if (adminRoutesEnabled) {
+  app.use(
+    session({
+      name: 'svyaz.sid',
+      secret: process.env.SESSION_SECRET || 'svyaz-pokoleniy-local-session-secret',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: 'auto',
+        maxAge: 24 * 60 * 60 * 1000,
+      },
+    }),
+  );
+}
 
 // Движок multer: файлы пишутся строками в таблицу files (см. storage.js).
 const upload = multer({
@@ -237,8 +267,45 @@ app.get('/api/projects/:id', async (req, res) => {
   }
 });
 
+// Проброс заявки с публичного инстанса на админский (сервер → сервер):
+// браузер видит только свой домен, адрес админки в бандл не попадает,
+// а публичный инстанс остаётся на read-only токене Turso.
+async function forwardSubmit(req, res) {
+  const contentType = req.headers['content-type'] || 'application/octet-stream';
+  const headers = { 'content-type': contentType, 'accept-encoding': 'identity' };
+  if (gatewaySecret) headers['x-gateway-secret'] = gatewaySecret;
+
+  const options = { method: 'POST', headers, signal: AbortSignal.timeout(180_000) };
+  if (contentType.includes('application/json')) {
+    options.body = JSON.stringify(req.body || {});
+  } else if (contentType.includes('application/x-www-form-urlencoded')) {
+    options.body = new URLSearchParams(req.body || {}).toString();
+  } else {
+    // multipart и прочее: тело ещё не разобрано — отдаём потоком как есть.
+    options.body = Readable.toWeb(req);
+    options.duplex = 'half';
+  }
+
+  try {
+    const upstream = await fetch(submitForwardUrl, options);
+    res.status(upstream.status);
+    const type = upstream.headers.get('content-type');
+    if (type) res.setHeader('content-type', type);
+    if (!upstream.body) return res.end();
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (error) {
+    console.error('Не удалось переслать заявку на админский инстанс:', error.message);
+    if (res.headersSent) return res.end();
+    res.status(502).json({ message: 'Не удалось отправить заявку. Попробуйте позже.' });
+  }
+}
+
 // Отправка проекта на рассмотрение
 app.post('/api/projects', (req, res) => {
+  // На публичном инстансе с read-only токеном сама запись запрещена базой:
+  // заявка уходит на админский инстанс, у которого полный токен.
+  if (submitForwardUrl) return forwardSubmit(req, res);
+
   // Принимаем multipart-файлы, а затем сами сопоставляем допустимые имена.
   // Это предотвращает непрозрачную ошибку Multer Unexpected file field,
   // если старый фронтенд отправляет, например, cover вместо image.
@@ -525,7 +592,13 @@ if (fs.existsSync(path.join(distDir, 'index.html'))) {
   });
 }
 
-initAll()
+// На публичном инстансе с read-only токеном Turso создание таблиц и сид
+// физически запрещено базой — пропускаем (таблицы заводит админский инстанс,
+// его нужно задеплоить первым).
+const skipInit = ['1', 'true', 'yes'].includes(String(process.env.SKIP_INIT || '').toLowerCase());
+if (skipInit) console.log('Инициализация базы пропущена (SKIP_INIT)');
+
+(skipInit ? Promise.resolve() : initAll())
   .then(() => {
     app.listen(PORT, () => console.log(`API сервер запущен: http://localhost:${PORT}`));
   })

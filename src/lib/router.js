@@ -12,7 +12,7 @@ function getCurrentRoute() {
     .slice(1)
     .split('?')[0]
 
-  // Поддерживаем маршруты вида #/admin
+  // Поддерживаем маршруты вида #/catalog
   if (route.startsWith('/')) {
     return route
   }

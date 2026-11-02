@@ -1,7 +1,14 @@
 # Связь поколений — школьный конкурс «Мы помним связь поколений»
 
-Портал конкурса: React (Vite) + Express + SQLite. Сайт, админка, API и загрузки
+Портал конкурса: React (Vite) + Express + SQLite. Сайт, API и загрузки
 работают с одного адреса — локально и на хостинге.
+
+Панель управления — **отдельный проект** в соседней папке
+`svyaz-pokoleniy-admin` (свой `package.json` и Vite). Здесь, в основном
+репозитории, её нет: ни маршрута `#/admin`, ни ссылки «Вход» — только
+публичный сайт и API. На хостинге этот же репозиторий запускается **дважды**:
+публичный сервис — без админских маршрутов и с read-only токеном базы,
+админский — с полным токеном (см. «Два сервиса на Render»).
 
 ## Требования
 
@@ -21,7 +28,14 @@ npm run dev:all   # API (http://localhost:3001) + сайт (http://localhost:517
 ```
 
 Сайт открывается на http://localhost:5173 — Vite проксирует `/api` и
-`/uploads` на API-сервер. Админка: http://localhost:5173/#/admin
+`/uploads` на API-сервер.
+
+Панель управления запускается отдельно (порт 5174):
+
+```bash
+cd ../svyaz-pokoleniy-admin
+npm install && npm run dev   # http://localhost:5174
+```
 
 Прод-режим локально (сайт и API с одного порта, как на хостинге):
 
@@ -69,18 +83,51 @@ npm run import:live -- https://svyaz-pokoleniy.onrender.com admin ВАШ_ПАР�
 
 ## Деплой на Render (GitHub + хостинг)
 
-Код лежит в GitHub (`Vatislo/svyaz-pokoleniy`), деплой настраивается один раз:
+Код лежит в GitHub (`Vatislo/svyaz-pokoleniy`), панель — в соседнем
+репозитории (`svyaz-pokoleniy-admin`). На Render поднимаются **три сервиса**:
 
-1. Откройте https://render.com → **New → Blueprint** → подключите репозиторий
-   `Vatislo/svyaz-pokoleniy`. Render возьмёт настройки из `render.yaml`
-   (сборка `npm install && npm run build`, запуск `npm start`).
-2. После первого деплоя откройте адрес вида
-   `https://svyaz-pokoleniy-xxxx.onrender.com` — сайт, каталог и загрузка
-   проектов работают сразу.
-3. Админка: `https://<ваш-адрес>/#/admin`. Логин — `admin`, пароль смотрите в
-   переменной `ADMIN_PASSWORD` сервиса на Render (Render сгенерировал её
-   автоматически при создании Blueprint).
-4. Каждый push в ветку `main` автоматически пересобирает и публикует сайт.
+| Сервис | Репозиторий | Что делает | Токен Turso |
+| --- | --- | --- | --- |
+| `svyaz-pokoleniy` | этот | публичный сайт + API без админ-маршрутов | read-only |
+| `svyaz-admin-api` | этот | `/api/auth/*`, `/api/admin/*`, инициализация базы | полный (write) |
+| `svyaz-admin` | `svyaz-pokoleniy-admin` | панель + прокси на админский API | — |
+
+Порядок настройки:
+
+1. **Два токена Turso на одну базу.** Полный —
+   `turso db tokens create <имя-базы>`, read-only —
+   `turso db tokens create <имя-базы> --read-only` (или в дашборде Turso
+   при создании токена выберите Read only).
+2. **Один общий секрет** для трёх сервисов: придумайте длинную строку
+   (`openssl rand -hex 32`) — это `GATEWAY_SECRET`. Пока он задан на
+   админском API, тот не отвечает без заголовка `x-gateway-secret`
+   (кроме `/api/health`) — адрес нельзя перебрать снаружи.
+3. **Blueprint основного репозитория**: New → Blueprint → `svyaz-pokoleniy` —
+   Render создаст оба сервиса. Заполните переменные с `sync: false`:
+   - `svyaz-admin-api`: `TURSO_URL`, `TURSO_AUTH_TOKEN` (полный),
+     `GATEWAY_SECRET`. `ADMIN_PASSWORD` Render сгенерирует сам.
+   - `svyaz-pokoleniy`: `TURSO_URL`, `TURSO_AUTH_TOKEN` (read-only),
+     `GATEWAY_SECRET` и
+     `SUBMIT_FORWARD_URL=https://<адрес svyaz-admin-api>/api/projects`.
+4. **Задеплойте сначала `svyaz-admin-api`** — он создаёт таблицы, сид и
+   администратора; публичному сервису с read-only токеном делать это
+   запрещено, поэтому он стартует со `SKIP_INIT=1` и должен приходить
+   вторым.
+5. **Blueprint панели**: репозиторий `svyaz-pokoleniy-admin` →
+   `ADMIN_API_URL=https://<адрес svyaz-admin-api>`, `GATEWAY_SECRET`,
+   `VITE_SITE_URL=https://<адрес svyaz-pokoleniy>`.
+6. Логин — `admin`, пароль из `ADMIN_PASSWORD` сервиса `svyaz-admin-api`.
+   Адрес панели — единственный, который надо держать в секрете: на
+   публичном сайте его нет ни в коде, ни в ссылках, а заявки с формы
+   уходят на админский API сервером-прокси, а не из браузера.
+7. Каждый push в `main` пересобирает соответствующий сервис.
+
+Почему панель ходит в API через свой сервер-прокси (`server.js`):
+`*.onrender.com` входит в Public Suffix List, поэтому два поддоменда
+Render браузер считает **разными сайтами** — межсайтовая кука
+`SameSite=lax` между ними не отправлялась бы. Через прокси браузер видит
+один домен, и сессия остаётся обычной first-party-кукой: ни CORS, ни
+`sameSite=none` не нужны.
 
 ### Ограничения бесплатного плана Render
 
@@ -88,17 +135,26 @@ npm run import:live -- https://svyaz-pokoleniy.onrender.com admin ВАШ_ПАР�
   диске (SQLite-файл, загрузки), стирается и сайт возвращается к seed-данным.
 - Решение — вынести данные наружу: `TURSO_URL`/`TURSO_AUTH_TOKEN` (база) и
   `CLOUDINARY_URL` (файлы), см. раздел «Постоянное хранение данных».
-- Второй вариант — платный план + Persistent Disk: раскомментируйте блок
-  `disk` в `render.yaml` и переменные `DB_PATH`, `UPLOADS_DIR`.
+- Три бесплатных web-сервиса делят лимит 750 часов в месяц и по очереди
+  засыпают: после 15 минут простоя первый запрос будит сервис примерно
+  за минуту. На время пробуждения админского API может «подвиснуть»
+  отправка формы — обычно помогает повторить отправку.
+- Второй вариант хранения — платный план + Persistent Disk: раскомментируйте
+  блок `disk` в `render.yaml` и переменные `DB_PATH`, `UPLOADS_DIR`.
 
 ## Администратор
 
 - Логин: `admin` (задаётся `ADMIN_USERNAME`)
 - Пароль: из `ADMIN_PASSWORD` (в `server/.env` локально, в переменных Render)
-- Админка: `/#/admin` (локально — http://localhost:5173/#/admin)
+- Панель управления: отдельный проект `svyaz-pokoleniy-admin`
+  (локально — http://localhost:5174)
 
 Сбросить пароль: поменять `ADMIN_PASSWORD` (минимум 12 символов) и выполнить
 `node server/create-admin.js`.
+
+Сами API-маршруты `/api/auth/*` и `/api/admin/*` остаются здесь, в этом
+репозитории, но на публичном сервисе они не смонтированы вовсе (`ADMIN_ROUTES=off`
+→ 404): живут только на сервисе `svyaz-admin-api`.
 
 ## Конфигурация
 
@@ -114,6 +170,10 @@ npm run import:live -- https://svyaz-pokoleniy.onrender.com admin ВАШ_ПАР�
 | `UPLOADS_DIR` | Локальный каталог загрузок (по умолчанию `server/uploads`) |
 | `SESSION_SECRET` | Секрет сессий (смените при публикации) |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Учётные данные администратора |
+| `ADMIN_ROUTES=off` | Публичный инстанс: `/api/auth/*` и `/api/admin/*` не существуют |
+| `SKIP_INIT=1` | Не создавать таблицы при старте (нужно read-only инстансу) |
+| `SUBMIT_FORWARD_URL` | Адрес админского API: заявки с формы пересылаются туда |
+| `GATEWAY_SECRET` | Общий секрет: админский API не отвечает без заголовка `x-gateway-secret` |
 
 ## Структура
 

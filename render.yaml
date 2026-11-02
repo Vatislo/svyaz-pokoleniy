@@ -1,5 +1,11 @@
 # Деплой на Render: New → Blueprint → выбрать этот репозиторий.
-# Сайт, админка и API будут работать на одном адресе *.onrender.com.
+# Один репозиторий — ДВА сервиса (два инстанса одного и того же API):
+#   svyaz-pokoleniy   — публичный сайт: API без /api/auth/* и /api/admin/*,
+#                       read-only токен Turso, инициализация базы отключена.
+#   svyaz-admin-api   — админский API: полный токен Turso, админ-роуты,
+#                       создаёт таблицы и администратора при старте.
+# Панель управления — третий сервис из соседнего репозитория
+# svyaz-pokoleniy-admin (там свой render.yaml).
 services:
   - type: web
     name: svyaz-pokoleniy
@@ -13,37 +19,63 @@ services:
         value: 24
       - key: NODE_ENV
         value: production
+      # Публичный инстанс: админских маршрутов нет вообще, а таблицы
+      # создаёт админский сервис (его нужно задеплоить ПЕРВЫМ).
+      - key: ADMIN_ROUTES
+        value: "off"
+      - key: SKIP_INIT
+        value: "1"
+      # Секреты и адреса заполняются вручную (см. README, «Два сервиса»):
+      #  - SUBMIT_FORWARD_URL — https://<адрес svyaz-admin-api>/api/projects
+      #  - GATEWAY_SECRET     — одна строка, одинаковая для всех трёх сервисов
+      #  - TURSO_URL / TURSO_AUTH_TOKEN — read-only токен:
+      #      turso db tokens create <имя-базы> --read-only
+      - key: SUBMIT_FORWARD_URL
+        sync: false
+      - key: GATEWAY_SECRET
+        sync: false
+      - key: TURSO_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+
+  - type: web
+    name: svyaz-admin-api
+    runtime: node
+    plan: free
+    # Инстансу нужен только API: сборка фронтенда (vite build) не выполняется.
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: NODE_ENV
+        value: production
       - key: SESSION_SECRET
         generateValue: true
       - key: ADMIN_USERNAME
         value: admin
       - key: ADMIN_PASSWORD
         generateValue: true
-      # Постоянное хранение данных: значений нет в репозитории (секреты),
-      # заполняются при развёртывании Blueprint или в настройках сервиса.
-      #  - TURSO_URL / TURSO_AUTH_TOKEN — база Turso (https://app.turso.tech):
-      #    проекты, статусы, администратор и файлы участников (таблица files)
-      #    переживают рестарты и деплои. Без них всё лежит на эфемерном диске
-      #    и стирается при каждом рестарте бесплатного плана.
+      # Секреты заполняются вручную:
+      #  - GATEWAY_SECRET — та же строка, что у svyaz-pokoleniy и панели.
+      #    Пока она задана, админский API не отвечает без заголовка
+      #    x-gateway-secret (кроме /api/health) — адрес нельзя перебрать снаружи.
+      #  - TURSO_URL / TURSO_AUTH_TOKEN — полный (write) токен:
+      #      turso db tokens create <имя-базы>
+      - key: GATEWAY_SECRET
+        sync: false
       - key: TURSO_URL
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
 
+# Значения с sync: false Render не трогает при синхронизации Blueprint —
+# заполняются один раз в настройках сервиса.
+#
 # Если TURSO_* не задать, всё работает по-старому: проекты и файлы лежат
 # в локальном SQLite-файле на диске сервиса, который стирается при каждом
 # рестарте/деплое бесплатного плана (сайт откатится к данным из seed).
-#
-# Альтернатива без Turso — платный план + Persistent Disk:
-# раскомментируйте блок ниже и задайте DB_PATH (в файл базы попадут
-# и проекты, и файлы участников):
-#
-# disk:
-#   name: svyaz-data
-#   mountPath: /var/data
-#   sizeGB: 1
-#
-#       - key: DB_PATH
-#         value: /var/data/app.db
-#       - key: UPLOADS_DIR
-#         value: /var/data/uploads
+# Для публичного сервиса с read-only токеном TURSO_* обязательны, а
+# SKIP_INIT=1 оставьте включённым — без полного токена база не создастся.
