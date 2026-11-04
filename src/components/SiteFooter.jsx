@@ -13,7 +13,7 @@ export function SiteFooter() {
 
   return (
     <footer className="mt-16 border-t border-stone-line bg-stone-deep">
-      <div className="shell grid gap-10 py-12 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+      <div className="shell flex justify-between gap-5 p-9">
         <div className="max-w-[38ch]">
           <a href="#/" className="inline-flex items-center gap-2 text-graphite" aria-label={content.project.title}>
             <span className="text-lg text-accent" aria-hidden="true">
@@ -52,23 +52,7 @@ export function SiteFooter() {
           </ul>
         </nav>
 
-        <nav aria-label={f.sectionsTitle} className="flex flex-col gap-3">
-          <h2 className="kicker text-graphite-muted">{f.sectionsTitle}</h2>
-          <ul className="flex flex-col gap-2">
-            {content.sections.map((section) => (
-              <li key={section.id}>
-                <a
-                  href={`#/catalog?section=${section.id}`}
-                  className="inline-flex items-center gap-2 text-sm text-graphite-soft transition-colors hover:text-accent"
-                >
-                  {section.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        {authors.length > 0 && (
+        {/* {authors.length > 0 && (
           <div aria-label={f.authorsTitle} className="flex flex-col gap-3">
             <h2 className="kicker text-graphite-muted">{f.authorsTitle}</h2>
             <ul className="flex flex-col gap-2">
@@ -80,7 +64,7 @@ export function SiteFooter() {
               ))}
             </ul>
           </div>
-        )}
+        )} */}
 
         {developers.length > 0 && (
           <div aria-label={f.developersTitle} className="flex flex-col gap-3">

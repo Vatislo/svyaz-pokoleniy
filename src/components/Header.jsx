@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Menu, Moon, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,7 +11,6 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { cn } from 'cn'
 import { useTheme } from '@/lib/theme'
-import { api } from '@/lib/api'
 import content from '@/data/content.json'
 
 function ThemeToggle({ className }) {
@@ -54,27 +53,11 @@ function navLinkClass(active) {
 
 export function Header({ path }) {
   const [open, setOpen] = useState(false)
-  const [adminAuthed, setAdminAuthed] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-
-    const check = () => {
-      api('/api/auth/me')
-        .then((result) => { if (!cancelled) setAdminAuthed(Boolean(result?.authenticated)) })
-        .catch(() => { if (!cancelled) setAdminAuthed(false) })
-    }
-
-    check()
-    window.addEventListener('auth-changed', check)
-    return () => {
-      cancelled = true
-      window.removeEventListener('auth-changed', check)
-    }
-  }, [])
-
-  const isAdmin = path === '/admin'
-  const adminLabel = adminAuthed ? 'Администрирование' : 'Вход'
+  // Показываем только пункт каталога.
+  const catalogNav = content.nav.filter(
+    (item) => item.href.replace(/^#/, '') === '/catalog',
+  )
 
   return (
     <header className="sticky top-0 z-50 border-b border-stone-line bg-stone/85 backdrop-blur-md">
@@ -97,7 +80,7 @@ export function Header({ path }) {
           aria-label={content.ui.menu}
           className="ml-auto hidden items-center gap-1.5 md:flex"
         >
-          {content.nav.map((item) => {
+          {catalogNav.map((item) => {
             const active = path === item.href.replace(/^#/, '')
 
             return (
@@ -111,17 +94,6 @@ export function Header({ path }) {
               </a>
             )
           })}
-
-          <a
-            href="#/admin"
-            aria-current={isAdmin ? 'page' : undefined}
-            className={cn(
-              navLinkClass(isAdmin),
-              'ml-1',
-            )}
-          >
-            {adminLabel}
-          </a>
 
           <ThemeToggle className="ml-2" />
         </nav>
@@ -158,7 +130,7 @@ export function Header({ path }) {
                 aria-label={content.ui.menu}
                 className="flex flex-col gap-1 px-4"
               >
-                {content.nav.map((item) => {
+                {catalogNav.map((item) => {
                   const active = path === item.href.replace(/^#/, '')
 
                   return (
@@ -178,20 +150,6 @@ export function Header({ path }) {
                     </a>
                   )
                 })}
-
-                <a
-                  href="#/admin"
-                  aria-current={isAdmin ? 'page' : undefined}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    'flex items-center rounded-r-full border-l-4 py-2.5 pl-4 text-base font-semibold transition-colors',
-                    isAdmin
-                      ? 'border-accent bg-stone-deep text-graphite'
-                      : 'border-transparent text-graphite-soft hover:bg-stone-deep hover:text-graphite',
-                  )}
-                >
-                  {adminLabel}
-                </a>
               </nav>
             </SheetContent>
           </Sheet>
