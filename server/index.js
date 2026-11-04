@@ -5,7 +5,6 @@ import multer from 'multer';
 import bcrypt from 'bcrypt';
 import path from 'node:path';
 import fs from 'node:fs';
-import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import pool, { uploadsDir, useCloudDb } from './db.js';
 import { initAll } from './init.js';
@@ -17,11 +16,8 @@ const PORT = Number(process.env.API_PORT || process.env.PORT || 3001);
 const isProduction = process.env.NODE_ENV === 'production';
 
 if (isProduction) {
-  // Render и другие прокси ставят X-Forwarded-Proto — без этого secure-куки не работают.
   app.set('trust proxy', 1);
 
-  // Бесплатный Render стирает локальный диск при каждом рестарте: без TURSO_URL
-  // проекты и файлы будут теряться. Предупреждаем, чтобы это не было сюрпризом.
   if (!useCloudDb) {
     console.warn('ВНИМАНИЕ: TURSO_URL не задан — база и файлы лежат на локальном диске и потеряются при рестарте на бесплатном плане.');
   }
@@ -59,34 +55,6 @@ function withProjectTags(project) {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- Работа в двух инстансах (подробности в README, раздел «Два сервиса») ---
-// ADMIN_ROUTES=off — публичный инстанс: маршрутов /api/auth/* и /api/admin/*
-//   нет вообще (404), а не «спрятаны за паролем».
-// GATEWAY_SECRET — задаётся ТОЛЬКО на админском инстансе: пока запрос не придёт
-//   с заголовком x-gateway-secret, админский API не отвечает извне, кроме /api/health.
-//   Секрет шлют панель (прокси) и публичный инстанс (пересылка заявок).
-const adminRoutesEnabled = process.env.ADMIN_ROUTES !== 'off';
-const gatewaySecret = process.env.GATEWAY_SECRET || '';
-const submitForwardUrl = (process.env.SUBMIT_FORWARD_URL || '').replace(/\/+$/, '');
-
-if (adminRoutesEnabled && gatewaySecret) {
-  app.use((req, res, next) => {
-    if (req.path === '/api/health') return next();
-    if (req.get('x-gateway-secret') === gatewaySecret) return next();
-    // 404 вместо 403: не подтверждаем, что адрес вообще существует.
-    return res.status(404).json({ message: 'Not found' });
-  });
-}
-
-if (!adminRoutesEnabled) {
-  app.use(['/api/auth', '/api/admin'], (_req, res) => {
-    res.status(404).json({ message: 'Not found' });
-  });
-}
-
-// Отдача файлов участников: сначала строка в таблице files (переживает
-// рестарты вместе с проектами), затем — файлы на диске из старых развёртываний
-// и локальной разработки.
 app.get('/uploads/:name', async (req, res, next) => {
   const name = sanitizeName(req.params.name);
   if (!name) return next();
@@ -110,26 +78,21 @@ app.use(
   express.static(uploadsDir),
 );
 
-// Сессии нужны только админским маршрутам; на публичном инстансе (ADMIN_ROUTES=off)
-// их не монтируем вовсе — без входа кука и не создаётся.
-if (adminRoutesEnabled) {
-  app.use(
-    session({
-      name: 'svyaz.sid',
-      secret: process.env.SESSION_SECRET || 'svyaz-pokoleniy-local-session-secret',
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: 'auto',
-        maxAge: 24 * 60 * 60 * 1000,
-      },
-    }),
-  );
-}
+app.use(
+  session({
+    name: 'svyaz.sid',
+    secret: process.env.SESSION_SECRET || 'svyaz-pokoleniy-local-session-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: 'auto',
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  }),
+);
 
-// Движок multer: файлы пишутся строками в таблицу files (см. storage.js).
 const upload = multer({
   storage: dbStorage,
   limits: { fileSize: MAX_FILE_SIZE, files: 16 },
@@ -147,12 +110,10 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// Проверка работы API
 app.get('/api/health', (_req, res) => {
   res.json({ success: true, message: 'API работает' });
 });
 
-// Проверка авторизации
 app.get('/api/auth/me', (req, res) => {
   if (!req.session?.adminId) {
     return res.json({ authenticated: false });
@@ -164,7 +125,6 @@ app.get('/api/auth/me', (req, res) => {
   });
 });
 
-// Вход администратора
 app.post('/api/auth/login', async (req, res) => {
   try {
     const username =
@@ -222,7 +182,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Выход администратора
 app.post('/api/auth/logout', (req, res) => {
   if (!req.session) {
     return res.json({ success: true });
@@ -239,7 +198,6 @@ app.post('/api/auth/logout', (req, res) => {
   });
 });
 
-// Публичный список: только утверждённые проекты
 app.get('/api/projects', async (_req, res) => {
   try {
     const [projects] = await pool.execute(
@@ -253,7 +211,6 @@ app.get('/api/projects', async (_req, res) => {
   }
 });
 
-// Один опубликованный проект: черновики и удалённые проекты публично недоступны
 app.get('/api/projects/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -267,48 +224,7 @@ app.get('/api/projects/:id', async (req, res) => {
   }
 });
 
-// Проброс заявки с публичного инстанса на админский (сервер → сервер):
-// браузер видит только свой домен, адрес админки в бандл не попадает,
-// а публичный инстанс остаётся на read-only токене Turso.
-async function forwardSubmit(req, res) {
-  const contentType = req.headers['content-type'] || 'application/octet-stream';
-  const headers = { 'content-type': contentType, 'accept-encoding': 'identity' };
-  if (gatewaySecret) headers['x-gateway-secret'] = gatewaySecret;
-
-  const options = { method: 'POST', headers, signal: AbortSignal.timeout(180_000) };
-  if (contentType.includes('application/json')) {
-    options.body = JSON.stringify(req.body || {});
-  } else if (contentType.includes('application/x-www-form-urlencoded')) {
-    options.body = new URLSearchParams(req.body || {}).toString();
-  } else {
-    // multipart и прочее: тело ещё не разобрано — отдаём потоком как есть.
-    options.body = Readable.toWeb(req);
-    options.duplex = 'half';
-  }
-
-  try {
-    const upstream = await fetch(submitForwardUrl, options);
-    res.status(upstream.status);
-    const type = upstream.headers.get('content-type');
-    if (type) res.setHeader('content-type', type);
-    if (!upstream.body) return res.end();
-    Readable.fromWeb(upstream.body).pipe(res);
-  } catch (error) {
-    console.error('Не удалось переслать заявку на админский инстанс:', error.message);
-    if (res.headersSent) return res.end();
-    res.status(502).json({ message: 'Не удалось отправить заявку. Попробуйте позже.' });
-  }
-}
-
-// Отправка проекта на рассмотрение
 app.post('/api/projects', (req, res) => {
-  // На публичном инстансе с read-only токеном сама запись запрещена базой:
-  // заявка уходит на админский инстанс, у которого полный токен.
-  if (submitForwardUrl) return forwardSubmit(req, res);
-
-  // Принимаем multipart-файлы, а затем сами сопоставляем допустимые имена.
-  // Это предотвращает непрозрачную ошибку Multer Unexpected file field,
-  // если старый фронтенд отправляет, например, cover вместо image.
   upload.any()(req, res, async (uploadError) => {
     if (uploadError) {
       const message =
@@ -327,7 +243,6 @@ app.post('/api/projects', (req, res) => {
       coverImage: 'image',
       cover_image: 'image',
       thumbnail: 'image',
-      // Несколько фотографий к проекту: поле images допускает больше одного файла
       images: 'images',
       photos: 'images',
       gallery: 'images',
@@ -342,10 +257,8 @@ app.post('/api/projects', (req, res) => {
       after_image: 'afterImage',
       after: 'afterImage',
     };
-    // В эти поля разрешён ровно один файл, в images сколько угодно (в пределах лимита).
     const singleFileFields = new Set(['image', 'media', 'beforeImage', 'afterImage']);
     const files = {};
-    // Откат всех уже сохранённых файлов при отказе из-за ошибки клиента.
     const rejectUpload = async (status, message) => {
       await discardFiles(req.files || []);
       return res.status(status).json({ message });
@@ -427,7 +340,6 @@ app.post('/api/projects', (req, res) => {
   });
 });
 
-// Список всех проектов для администратора
 app.get('/api/admin/projects', requireAdmin, async (_req, res) => {
   try {
     const [projects] = await pool.execute('SELECT * FROM projects ORDER BY created_at DESC');
@@ -438,7 +350,6 @@ app.get('/api/admin/projects', requireAdmin, async (_req, res) => {
   }
 });
 
-// Редактирование карточки проекта администратором (в том числе уже опубликованной).
 app.patch('/api/admin/projects/:id', requireAdmin, (req, res) => {
   upload.any()(req, res, async (uploadError) => {
     if (uploadError) {
@@ -507,7 +418,6 @@ app.patch('/api/admin/projects/:id', requireAdmin, (req, res) => {
   });
 });
 
-// Безвозвратное удаление доступно только для проектов, уже находящихся в «Удалённых».
 app.delete('/api/admin/projects/:id/permanent', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -522,11 +432,10 @@ app.delete('/api/admin/projects/:id/permanent', requireAdmin, async (req, res) =
     await pool.execute('DELETE FROM projects WHERE id = ?', [id]);
     const mediaUrls = ['image_url', 'media_url', 'before_image_url', 'after_image_url']
       .map((key) => rows[0][key]);
-    // Дополнительные фотографии проекта (список ссылок в gallery_json)
     try {
       const gallery = JSON.parse(rows[0].gallery_json || '[]');
       if (Array.isArray(gallery)) mediaUrls.push(...gallery);
-    } catch { /* некорректный JSON, пропускаем */ }
+    } catch {}
     for (const value of mediaUrls) await removeMediaUrl(value);
     return res.json({ success: true, id, message: 'Проект безвозвратно удалён' });
   } catch (error) {
@@ -535,7 +444,6 @@ app.delete('/api/admin/projects/:id/permanent', requireAdmin, async (req, res) =
   }
 });
 
-// Утверждение, удаление и восстановление проекта
 app.patch('/api/admin/projects/:id/:action', requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -575,15 +483,11 @@ app.patch('/api/admin/projects/:id/:action', requireAdmin, async (req, res) => {
   }
 });
 
-// Обработка ошибок сервера (четыре аргумента обязательны для Express)
-// eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
   console.error('Ошибка сервера:', err);
   res.status(500).json({ message: 'Внутренняя ошибка сервера' });
 });
 
-// В продакшене Express раздаёт собранный фронтенд (dist), сайт, админка,
-// API и загрузки живут на одном домене. В dev-режиме этим занимается Vite.
 const distDir = path.join(__dirname, '..', 'dist');
 if (fs.existsSync(path.join(distDir, 'index.html'))) {
   app.use(express.static(distDir));
@@ -592,13 +496,7 @@ if (fs.existsSync(path.join(distDir, 'index.html'))) {
   });
 }
 
-// На публичном инстансе с read-only токеном Turso создание таблиц и сид
-// физически запрещено базой — пропускаем (таблицы заводит админский инстанс,
-// его нужно задеплоить первым).
-const skipInit = ['1', 'true', 'yes'].includes(String(process.env.SKIP_INIT || '').toLowerCase());
-if (skipInit) console.log('Инициализация базы пропущена (SKIP_INIT)');
-
-(skipInit ? Promise.resolve() : initAll())
+initAll()
   .then(() => {
     app.listen(PORT, () => console.log(`API сервер запущен: http://localhost:${PORT}`));
   })

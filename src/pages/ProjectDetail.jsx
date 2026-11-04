@@ -11,11 +11,6 @@ import { api } from '@/lib/api'
 
 const typeNames = { photo: 'Фотография', story: 'Текстовая история', video: 'Видео', gif: 'GIF-анимация', pair: 'Тогда / сейчас', other: 'Другое' }
 
-// Единый формат страницы проекта: шапка (раздел, тип, заголовок,
-// полное описание), затем медиа, затем блок с автором, датой,
-// источником и тегами. Описание выводится один раз.
-// Каждый приложенный файл показан в отдельной рамке, а клик по
-// медиа открывает модальное окно с переключением между файлами.
 export function ProjectDetail({ id }) {
   const [project, setProject] = useState(null)
   const [projects, setProjects] = useState([])
@@ -58,13 +53,8 @@ export function ProjectDetail({ id }) {
   const before = project.before_image_url || null
   const after = project.after_image_url || null
   const isPair = project.project_type === 'pair' && before && after
-  // Если по какой-то причине у пары сохранилось только одно фото,
-  // показываем его отдельным кадром, без ползунка.
   const lonePairImage = project.project_type === 'pair' && !isPair ? (before || after) : null
 
-  // Все медиафайлы поста одним списком: обложка, фото сравнения,
-  // видео, GIF, файл и галерея. По этому списку работает
-  // переключение «вперёд/назад» в модальном окне.
   const mediaItems = []
   if (project.image_url) mediaItems.push({ src: project.image_url, label: 'Обложка' })
   if (before) mediaItems.push({ src: before, label: 'Фотография «тогда»' })
@@ -85,8 +75,6 @@ export function ProjectDetail({ id }) {
     <div className="shell max-w-5xl py-8 md:py-12">
     <a href="#/catalog" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-graphite-soft hover:text-accent"><ArrowLeft className="size-4" /> Назад в каталог</a>
     <article className="overflow-hidden rounded-2xl border border-stone-line bg-stone">
-      {/* Шапка: на обложке заголовок лежит поверх снимка на градиенте,
-          без обложки шапка остаётся обычной */}
       {project.image_url ? (
         <header className="relative">
           <button
@@ -125,13 +113,11 @@ export function ProjectDetail({ id }) {
         </header>
       )}
 
-      {/* Описание и теги отдельным лёгким блоком под шапкой */}
       <div className="px-5 pt-5 pb-5 sm:px-7">
         <p className="max-w-3xl whitespace-pre-line text-base leading-relaxed text-graphite-soft">{project.description}</p>
         <div className="mt-4 flex flex-wrap gap-2">{tags.map((tag) => <a key={tag} href={`#/catalog?tag=${encodeURIComponent(tag)}`} className="inline-flex items-center gap-1 rounded-full border border-stone-line px-3 py-1.5 text-sm text-graphite-soft hover:border-accent hover:text-accent"><Tag className="size-3.5" />#{tag}</a>)}</div>
       </div>
 
-      {/* Главный материал: во всю ширину статьи, без рамок и подписей */}
       {isPair && (
         <div className="px-5 pt-6 pb-6 sm:px-7">
           <CompareSlider
@@ -200,7 +186,6 @@ export function ProjectDetail({ id }) {
         </div>
       )}
 
-      {/* Приложенные фотографии: каждая в отдельной рамке с отступом */}
       {gallery.length > 0 && (
         <section aria-label="Дополнительные фотографии проекта" className={`${frameClass} bg-stone-deep p-4 sm:p-6`}>
           <h2 className="kicker mb-4 text-graphite-muted">Ещё фотографии · {gallery.length}</h2>
@@ -225,7 +210,6 @@ export function ProjectDetail({ id }) {
         </section>
       )}
 
-      {/* Блок сведений об авторе и материале */}
       <dl className="grid gap-5 border-t border-stone-line p-5 sm:grid-cols-2 sm:p-8 md:p-10 lg:grid-cols-3">
         <div>
           <dt className="kicker text-graphite-muted">Автор</dt>
@@ -239,7 +223,6 @@ export function ProjectDetail({ id }) {
     <nav className="mt-6 grid gap-3 sm:grid-cols-2" aria-label="Навигация по проектам">{previous ? <a href={`#/project/${previous.id}`} className="flex items-center gap-3 rounded-xl border border-stone-line bg-stone p-4 hover:border-graphite-muted"><ArrowLeft className="size-5 shrink-0 text-accent" /><span><span className="block text-xs text-graphite-muted">Предыдущий проект</span><span className="mt-1 block font-semibold text-graphite">{previous.title}</span></span></a> : <span />}{next ? <a href={`#/project/${next.id}`} className="flex items-center justify-end gap-3 rounded-xl border border-stone-line bg-stone p-4 text-right hover:border-graphite-muted"><span><span className="block text-xs text-graphite-muted">Следующий проект</span><span className="mt-1 block font-semibold text-graphite">{next.title}</span></span><ArrowRight className="size-5 shrink-0 text-accent" /></a> : <span />}</nav>
     {similar.length > 0 && <section className="mt-10"><div className="mb-5"><p className="kicker text-kicker">продолжить знакомство</p><h2 className="display-title mt-2 text-2xl text-graphite">Похожие проекты</h2></div><div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{similar.map((item) => <PublicProjectCard key={item.id} project={item} />)}</div></section>}
 
-    {/* Модальное окно просмотра: переключение стрелками или клавиатурой */}
     <MediaLightbox
       items={mediaItems}
       index={viewerIndex}

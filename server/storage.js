@@ -1,13 +1,7 @@
-// Хранение файлов участников — BLOB-строки в таблице files той же базы,
-// где лежат проекты (локально файл app.db, на хостинге Turso по TURSO_URL).
-// Ссылки остаются прежними: /uploads/<имя>, фронтенд их не различает.
 import fs from 'node:fs';
 import path from 'node:path';
 import pool, { uploadsDir } from './db.js';
 
-// Ограничение размера одного файла: данные уходят в базу через HTTP
-// (base64-кодирование добавляет ~30%), поэтому cap существенно ниже
-// прежних 60 МБ. Обложки и фото галереи и так ограничены 8 МБ валидацией.
 export const MAX_FILE_SIZE = 16 * 1024 * 1024;
 
 function generateName(originalname) {
@@ -33,13 +27,11 @@ export async function removeUpload(name) {
   const safeName = sanitizeName(name);
   if (!safeName) return;
   await pool.execute('DELETE FROM files WHERE name = ?', [safeName]);
-  // Старые файлы из прежних развёртываний могли остаться на диске.
   try {
     fs.unlinkSync(path.join(uploadsDir, safeName));
-  } catch { /* файла на диске и не было */ }
+  } catch {}
 }
 
-// multer StorageEngine: поток читается в буфер и одной строкой пишется в files.
 export const dbStorage = {
   _handleFile(req, file, cb) {
     const chunks = [];
@@ -64,22 +56,18 @@ export const dbStorage = {
   },
 };
 
-// URL для записи в базу проектов.
 export function fileUrl(file) {
   return `/uploads/${file.filename}`;
 }
 
-// Удаление файлов, которые multer уже принял (откат после ошибки валидации).
 export async function discardFiles(files) {
   for (const file of files || []) {
     try {
       await removeUpload(file.filename);
-    } catch { /* файл мог уже отсутствовать */ }
+    } catch {}
   }
 }
 
-// Удаление файла по значению из базы проектов (/uploads/...).
-// Абсолютные и посторонние ссылки пропускаем — им удалять нечего.
 export async function removeMediaUrl(value) {
   if (typeof value !== 'string' || !value.startsWith('/uploads/')) return;
   try {

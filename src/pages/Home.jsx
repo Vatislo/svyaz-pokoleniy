@@ -26,14 +26,9 @@ function SceneShell({ index, active, enabled, label, className, children }) {
       tabIndex={hidden ? -1 : undefined}
       className={cn(
         'flex flex-col',
-        // className идёт ДО базовых классов: иначе tailwind-merge вырезает
-        // `absolute` из-за `relative` в описании конкретной сцены и сцены
-        // перестают накладываться друг на друга, «снап»-скролл ломается.
         className,
         enabled
-          ? // В режиме сцен центрируем через авто-поля: `justify-center` в
-            // прокручиваемом контейнере обрезает верх контента, и до него
-            // нельзя было докрутить.
+          ? 
             'absolute inset-0 overflow-y-auto overscroll-contain px-4 py-10 transition-[opacity,transform] duration-[420ms] ease-out md:px-8 [&>*:not(.absolute)]:my-auto'
           : 'justify-center border-b border-stone-line px-4 py-14 md:px-8',
         enabled && hidden && 'pointer-events-none translate-y-[18px] opacity-0',
@@ -97,8 +92,6 @@ function CoverScene({ scene, index, active, enabled, onGo }) {
 }
 
 function SectionsScene({ scene, index, active, enabled }) {
-  // На главной показываем лишь несколько примеров разделов,
-  // полный список доступен в каталоге.
   const previewSections = content.sections.slice(0, PREVIEW_SECTIONS)
   return (
     <SceneShell
@@ -169,8 +162,6 @@ function SectionsScene({ scene, index, active, enabled }) {
   )
 }
 
-// Сцена «Тогда и сейчас»: показывает первый проект участников
-// с фотографиями тогда и сейчас.
 function CompareScene({ scene, index, active, enabled, project }) {
   if (!project) return null
   return (
@@ -204,7 +195,6 @@ function CompareScene({ scene, index, active, enabled, project }) {
   )
 }
 
-// Сцена «История проекта»: показывает первый опубликованный проект.
 function StoryScene({ scene, index, active, enabled, project }) {
   if (!project) return null
   return (
@@ -291,7 +281,6 @@ function CtaScene({ scene, index, active, enabled }) {
 function SceneIndicator({ scenes, active, enabled, go }) {
   return (
     <>
-      {/* Точки сбоку: на планшетах и компьютерах */}
       <nav
         aria-label={content.ui.sceneIndicator}
         className="fixed top-1/2 right-4 z-40 hidden -translate-y-1/2 flex-col gap-1.5 rounded-2xl border border-stone-line bg-stone p-2 shadow-card md:flex"
@@ -329,7 +318,6 @@ function SceneIndicator({ scenes, active, enabled, go }) {
         })}
       </nav>
 
-      {/* Панель снизу: на телефоне */}
       <nav
         aria-label={content.ui.sceneIndicator}
         className="fixed inset-x-0 bottom-0 z-40 flex justify-center gap-1.5 border-t border-stone-line bg-stone/95 px-3 py-2 shadow-card md:hidden"
@@ -370,18 +358,15 @@ export function Home() {
     return () => { cancelled = true }
   }, [])
 
-  // Проект с фотографиями тогда и сейчас для сцены сравнения.
   const compareProject = useMemo(
     () => projects.find((p) => p.before_image_url && p.after_image_url) || null,
     [projects],
   )
-  // Первый проект с обложкой для сцены истории.
   const storyProject = useMemo(
     () => projects.find((p) => p.image_url) || projects[0] || null,
     [projects],
   )
 
-  // Сцены с материалами показываются только если есть что показать.
   const scenes = useMemo(
     () => content.home.scenes.filter((scene) => {
       if (scene.kind === 'compare') return Boolean(compareProject)
@@ -418,9 +403,6 @@ export function Home() {
             }}
             className={cn(
               enabled ? 'absolute inset-0' : 'min-h-[70vh]',
-              // Обёртки сцен накладываются друг на друга: без этого правила
-              // невидимая обёртка соседней сцены перехватывает все клики,
-              // и кнопки активной сцены не работают.
               enabled && i !== active && 'pointer-events-none',
             )}
           >

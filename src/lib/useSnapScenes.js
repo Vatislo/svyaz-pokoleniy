@@ -1,22 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const LOCKOUT_MS = 400
-// Суммарный «прокрученный» пиксель, после которого переключается сцена.
-// Копим значения: у трекпадов и некоторых колёс каждый отдельный event
-// слишком маленький, из-за чего сцены не переключались вообще.
 const WHEEL_STEP_PX = 45
-// Если события идут с паузой больше этого, начинаем копить заново.
 const ACCUM_RESET_MS = 200
 const LINE_HEIGHT_PX = 16
 
-// Колесо может отдавать пиксели (deltaMode 0), строки (1) или страницы (2).
 function toPixels(deltaY, deltaMode) {
   if (deltaMode === 1) return deltaY * LINE_HEIGHT_PX
   if (deltaMode === 2) return deltaY * window.innerHeight
   return deltaY
 }
 
-// Пока открыт модальный диалог (Radix гасит клики на body), не перехватываем скролл.
 function modalIsOpen() {
   return document.body.style.pointerEvents === 'none'
 }
@@ -84,8 +78,6 @@ export function useSnapScenes(count) {
       const delta = toPixels(e.deltaY, e.deltaMode)
       if (!delta) return
 
-      // Не ломаем внутренний скролл сцены: пока у сцены есть куда скроллить,
-      // отдаём событие браузеру и сцену не переключаем.
       let el = e.target instanceof Element ? e.target : null
       while (el) {
         if (el.scrollHeight > el.clientHeight + 1) {
@@ -100,14 +92,11 @@ export function useSnapScenes(count) {
         el = el.parentElement
       }
 
-      // Копим прокрутку: порог сравниваем с суммой, а не с одним событием.
       const now = Date.now()
       if (now - lastWheelRef.current > ACCUM_RESET_MS) accumRef.current = 0
       lastWheelRef.current = now
       accumRef.current += delta
 
-      // Прокрутку страницы «снап»-режима не отдаём браузеру, иначе сцены
-      // начинают уезжать из-под шапки.
       e.preventDefault()
 
       if (Math.abs(accumRef.current) < WHEEL_STEP_PX) return

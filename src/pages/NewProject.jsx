@@ -18,9 +18,6 @@ const fieldClass = 'mt-2 min-h-11 rounded-xl border-stone-line bg-stone px-3 tex
 const labelClass = 'block text-sm font-semibold text-graphite'
 const MAX_PHOTOS = 12
 
-// Черновик формы живёт вне компонента: страница создаётся заново при каждом
-// переходе на неё, а черновик переживает такие переходы до самой перезагрузки
-// страницы. После успешной отправки черновик очищается.
 function createDraft() {
   return {
     step: 0,
@@ -41,22 +38,16 @@ function FileField({ label, accept, file, onChange, required = false, hint }) {
     <label className="flex cursor-pointer flex-col gap-2 rounded-xl border border-dashed border-stone-line bg-stone-deep/60 p-4 transition-colors hover:border-accent">
       <span className="flex items-center gap-2 text-sm font-semibold text-graphite"><ImagePlus className="size-4 text-accent" />{label}{required ? ' *' : ''}</span>
       <span className="text-xs leading-relaxed text-graphite-muted">{file?.name || hint || 'Нажмите, чтобы выбрать файл'}</span>
-      {/* required не ставим на сам input: после возврата на страницу из черновика
-          файл есть в состоянии, но браузер его «не видит» и блокирует отправку.
-          Проверку делает JS в nextStep/submitProject. */}
       <input type="file" accept={accept} className="sr-only" onChange={(event) => onChange(event.target.files?.[0] || null)} />
     </label>
   )
 }
 
-// Поле для нескольких фотографий: файлы выбираются группой,
-// убрать лишние можно крестиком на превью.
 function PhotosField({ label, hint, photos, previews, onChange }) {
   const append = (event) => {
     const picked = Array.from(event.target.files || [])
     if (picked.length === 0) return
     onChange([...photos, ...picked].slice(0, MAX_PHOTOS))
-    // Сбрасываем input, чтобы можно было выбрать те же файлы повторно
     event.target.value = ''
   }
 
@@ -97,8 +88,6 @@ function PhotosField({ label, hint, photos, previews, onChange }) {
 }
 
 export function NewProject() {
-  // Инициализируемся из черновика, чтобы уход со страницы и возврат
-  // на неё не сбрасывали обложку, файлы и введённый текст.
   const [step, setStep] = useState(draft.step)
   const [type, setType] = useState(draft.type)
   const [form, setForm] = useState(draft.form)
@@ -112,7 +101,6 @@ export function NewProject() {
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
 
-  // Сохраняем состояние в черновик при каждом изменении.
   useEffect(() => {
     draft.step = step
     draft.type = type
@@ -200,7 +188,6 @@ export function NewProject() {
     try {
       await api('/api/projects', { method: 'POST', body })
       setSent(true)
-      // Отправка прошла: черновик больше не нужен.
       Object.assign(draft, createDraft())
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (err) {

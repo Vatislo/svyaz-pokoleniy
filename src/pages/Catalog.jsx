@@ -19,8 +19,6 @@ function chipClass(active) {
   )
 }
 
-// Реальные имена участников проекта вписываются в src/data/content.json,
-// в блок credits (authors / leaders). Пустые имена не выводятся.
 function ProjectCredits() {
   const groups = [content.credits?.authors, content.credits?.leaders].filter(
     (group) => Array.isArray(group?.items) && group.items.some((item) => item.name?.trim()),

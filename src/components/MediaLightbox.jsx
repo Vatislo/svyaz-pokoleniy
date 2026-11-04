@@ -2,7 +2,6 @@ import { useCallback, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, FileText, Music, Video } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
-// Определяем, чем открыть файл в лайтбоксе: картинка, видео, аудио, PDF или ссылка.
 function kindOf(src) {
   const path = String(src).split('?')[0].toLowerCase()
   if (/\.(mp4|webm|ogv|mov|m4v)$/.test(path)) return 'video'
@@ -19,11 +18,6 @@ const kindLabels = {
   file: 'Файл',
 }
 
-/**
- * Модальное окно для приложенных файлов: показывает файл крупно
- * и позволяет переключаться между остальными стрелками или клавиатурой.
- * items: [{ src, label }]
- */
 export function MediaLightbox({ items, index, onIndexChange, onClose }) {
   const count = items?.length || 0
   const open = count > 0 && index >= 0 && index < count
@@ -55,7 +49,6 @@ export function MediaLightbox({ items, index, onIndexChange, onClose }) {
         overlayClassName="bg-black/85 backdrop-blur-sm"
         className="flex h-[min(90vh,860px)] w-[min(96vw,1100px)] max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden rounded-2xl border border-white/15 bg-[#16151a] p-0 text-stone shadow-2xl sm:max-w-[min(96vw,1100px)]"
       >
-        {/* Шапка: заголовок, счётчик и закрытие */}
         <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
           <DialogTitle className="min-w-0 flex-1 truncate text-sm font-semibold text-stone">
             {item?.label || 'Файл'}
@@ -73,7 +66,6 @@ export function MediaLightbox({ items, index, onIndexChange, onClose }) {
           </button>
         </div>
 
-        {/* Файл крупно + стрелки переключения */}
         <div className="relative flex min-h-0 flex-1 items-center justify-center bg-[#0d0c10] p-3 sm:p-4">
           {item && kind === 'image' && (
             <img
@@ -145,7 +137,6 @@ export function MediaLightbox({ items, index, onIndexChange, onClose }) {
           )}
         </div>
 
-        {/* Подсказка по управлению */}
         <div className="flex items-center justify-center gap-3 border-t border-white/10 px-4 py-2 text-xs text-stone/55">
           {kind !== 'file' && (
             <span className="inline-flex items-center gap-1.5">

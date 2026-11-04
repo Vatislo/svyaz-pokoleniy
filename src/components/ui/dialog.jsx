@@ -29,8 +29,6 @@ function DialogClose({
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
-// forwardRef: Radix передаёт ref в оверлей через Slot, без forwardRef
-// React ругается «Function components cannot be given refs».
 const DialogOverlay = React.forwardRef(function DialogOverlay(
   {
     className,

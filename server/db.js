@@ -14,9 +14,6 @@ if (!fs.existsSync(envPath) && fs.existsSync(path.join(__dirname, '.env.example'
 
 dotenv.config({ path: envPath });
 
-// Где хранится база:
-//  - TURSO_URL задан (Render) — облачная SQLite (Turso/libSQL), данные переживают рестарты;
-//  - иначе — локальный файл server/data/app.db (для разработки и миграций).
 export const DB_PATH = process.env.DB_PATH
   ? path.resolve(process.env.DB_PATH)
   : path.join(__dirname, 'data', 'app.db');
@@ -38,7 +35,6 @@ if (useCloudDb) {
 } else {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   client = createClient({ url: `file:${DB_PATH}` });
-  // Режимы работают только для локального файла; к облачной базе не применяются.
   await client.execute('PRAGMA journal_mode = WAL');
   await client.execute('PRAGMA busy_timeout = 5000');
 }
@@ -54,7 +50,6 @@ function toPlainRows(resultSet) {
   });
 }
 
-// Адаптер с интерфейсом mysql2/promise: index.js/init.js/migration не знают о libSQL.
 async function run(sql, params = []) {
   const text = sql.trim();
   const request = params.length ? { sql: text, args: params } : text;

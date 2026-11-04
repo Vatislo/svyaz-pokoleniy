@@ -12,7 +12,6 @@ function getCurrentRoute() {
     .slice(1)
     .split('?')[0]
 
-  // Поддерживаем маршруты вида #/catalog
   if (route.startsWith('/')) {
     return route
   }
@@ -30,7 +29,6 @@ export function useHashRoute() {
 
     window.addEventListener('hashchange', handleHashChange)
 
-    // Синхронизируем маршрут при запуске
     handleHashChange()
 
     return () => {

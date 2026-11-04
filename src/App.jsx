@@ -4,10 +4,15 @@ import { Home } from '@/pages/Home'
 import { Catalog } from '@/pages/Catalog'
 import { NewProject } from '@/pages/NewProject'
 import { ProjectDetail } from '@/pages/ProjectDetail'
+import Admin from '@/pages/Admin'
 import { useHashRoute } from '@/lib/router'
 import content from '@/data/content.json'
 
 function Page({ path }) {
+  if (path === '/admin') {
+    return <Admin />
+  }
+
   if (path === '/create-project') {
     return <NewProject />
   }
@@ -16,7 +21,6 @@ function Page({ path }) {
     return <ProjectDetail id={decodeURIComponent(path.slice('/project/'.length))} />
   }
 
-  // Каталог с поиском
   if (path === '/catalog') {
     const [base, search = ''] = window.location.hash
       .replace(/^#/, '')
@@ -27,7 +31,6 @@ function Page({ path }) {
     }
   }
 
-  // Главная страница
   return <Home />
 }
 

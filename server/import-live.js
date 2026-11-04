@@ -1,11 +1,4 @@
-// Перенос данных с уже развернутого живого сайта в текущую базу:
-//   node server/import-live.js https://svyaz-pokoleniy.onrender.com admin Пароль
-// (логин/пароль можно не указывать — возьмутся из LIVE_USERNAME / LIVE_PASSWORD).
-//
-// Что делает: логинится в API живого сайта, забирает все проекты из админки,
-// скачивает файлы из /uploads и складывает их в таблицу files текущей базы
-// (SQLite-файл локально или Turso по TURSO_URL), после чего записи
-// upsert'ятся в базу проектов.
+
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,8 +22,7 @@ const liveUrl = (process.argv[2] || process.env.LIVE_URL || '').replace(/\/$/, '
 const username = process.argv[3] || process.env.LIVE_USERNAME || 'admin';
 const password = process.argv[4] || process.env.LIVE_PASSWORD;
 
-// Ссылка вида /uploads/... или абсолютная на живом сайте → скачиваем файл,
-// кладём в таблицу files и возвращаем новый адрес /uploads/<имя>.
+
 async function migrateFile(url) {
   if (!url || typeof url !== 'string') return url;
   const isRelative = url.startsWith('/uploads/');

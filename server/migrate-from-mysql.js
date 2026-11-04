@@ -1,6 +1,3 @@
-// Разовая миграция данных из старой MySQL/MariaDB-базы в SQLite.
-// Запуск: node server/migrate-from-mysql.js
-// Перед запуском задайте DB_* (MySQL) и DB_PATH (SQLite) в server/.env.
 import fs from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
@@ -72,8 +69,6 @@ async function main() {
     copiedAdmins += 1;
   }
 
-  // Файлы загрузок уже лежат рядом с сервером — копировать их в SQLite-вариант не нужно,
-  // но проверим, что каталог с картинками существует.
   const uploads = path.join(__dirname, 'uploads');
   const uploadsCount = fs.existsSync(uploads) ? fs.readdirSync(uploads).length : 0;
 

@@ -31,7 +31,6 @@ function SheetPortal({
   return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />
 }
 
-// forwardRef: Radix передаёт ref в оверлей через Slot, без forwardRef React ругается.
 const SheetOverlay = React.forwardRef(function SheetOverlay(
   {
     className,

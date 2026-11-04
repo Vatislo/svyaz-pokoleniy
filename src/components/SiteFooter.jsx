@@ -1,17 +1,12 @@
 import content from '@/data/content.json'
 
-// Общий футер для каталога и страниц проекта: кратко об архиве,
-// навигация, разделы и авторы. Тексты лежат в content.json (блок footer).
 export function SiteFooter() {
   const f = content.footer
 
-  // Авторы: имена вписываются в content.json (footer.authors, до 4 человек).
-  // Пустые имена не выводятся, как в блоке credits.
   const authors = (Array.isArray(f.authors) ? f.authors : []).filter(
     (author) => author.name?.trim(),
   )
 
-  // Разработчики сайта: имена вписываются в content.json (footer.developers).
   const developers = (Array.isArray(f.developers) ? f.developers : []).filter(
     (dev) => dev.name?.trim(),
   )
@@ -19,7 +14,6 @@ export function SiteFooter() {
   return (
     <footer className="mt-16 border-t border-stone-line bg-stone-deep">
       <div className="shell grid gap-10 py-12 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
-        {/* О проекте */}
         <div className="max-w-[38ch]">
           <a href="#/" className="inline-flex items-center gap-2 text-graphite" aria-label={content.project.title}>
             <span className="text-lg text-accent" aria-hidden="true">
@@ -34,7 +28,6 @@ export function SiteFooter() {
           </p>
         </div>
 
-        {/* Навигация */}
         <nav aria-label={f.navTitle} className="flex flex-col gap-3">
           <h2 className="kicker text-graphite-muted">{f.navTitle}</h2>
           <ul className="flex flex-col gap-2">
@@ -59,7 +52,6 @@ export function SiteFooter() {
           </ul>
         </nav>
 
-        {/* Разделы архива ведут в каталог с фильтром */}
         <nav aria-label={f.sectionsTitle} className="flex flex-col gap-3">
           <h2 className="kicker text-graphite-muted">{f.sectionsTitle}</h2>
           <ul className="flex flex-col gap-2">
@@ -76,7 +68,6 @@ export function SiteFooter() {
           </ul>
         </nav>
 
-        {/* Авторы проекта: столбик появляется, когда вписано хотя бы одно имя */}
         {authors.length > 0 && (
           <div aria-label={f.authorsTitle} className="flex flex-col gap-3">
             <h2 className="kicker text-graphite-muted">{f.authorsTitle}</h2>
@@ -91,7 +82,6 @@ export function SiteFooter() {
           </div>
         )}
 
-        {/* Разработчики сайта: столбик появляется, когда вписано хотя бы одно имя */}
         {developers.length > 0 && (
           <div aria-label={f.developersTitle} className="flex flex-col gap-3">
             <h2 className="kicker text-graphite-muted">{f.developersTitle}</h2>
@@ -107,7 +97,6 @@ export function SiteFooter() {
         )}
       </div>
 
-      {/* Нижняя строка: примечание о проверке материалов и лицензия */}
       <div className="border-t border-stone-line">
         <div className="shell py-5 text-xs text-graphite-muted">
           <p className="mt-2 flex items-center gap-1.5">

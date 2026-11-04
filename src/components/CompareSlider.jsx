@@ -77,8 +77,6 @@ export function CompareSlider({ thenImage, thenAlt, nowImage, nowAlt, compact = 
           </span>
         </div>
 
-        {/* Подписи с фиксированными цветами: в тёмной теме `text-stone`
-            становится тёмным, и пиюли сливались с тёмными участками фото. */}
         <span className="pointer-events-none absolute bottom-3 left-3 rounded-full border border-black/20 bg-white/90 px-3 py-1 text-[0.66rem] font-semibold tracking-[0.14em] text-[#1e1d1c] uppercase shadow-sm">
           {content.ui.then}
         </span>

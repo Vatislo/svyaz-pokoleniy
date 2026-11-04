@@ -15,7 +15,6 @@ export function useTheme() {
     try {
       localStorage.setItem(STORAGE_KEY, theme)
     } catch {
-      /* localStorage может быть недоступен */
     }
   }, [theme])
 
